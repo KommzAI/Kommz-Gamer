@@ -3784,6 +3784,15 @@
         document.getElementById(tabId).classList.add('active');
         document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
         if(event) event.currentTarget.classList.add('active');
+        // HUD visible uniquement dans tab-overlay
+        const hudToggle = document.getElementById('hudToggle');
+        if (hudToggle && hudToggle.checked) {
+            if (tabId === 'tab-overlay') {
+                toggleExternalHUD(true);
+            } else {
+                toggleExternalHUD(false);
+            }
+        }
     }
 
     function updateUIBasedOnEngine(engine) {
