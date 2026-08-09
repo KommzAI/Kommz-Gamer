@@ -4472,6 +4472,25 @@ def route_hud_move():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route('/config/fish', methods=['POST'])
+def set_fish_config():
+    """Sauvegarde la clé API Fish Audio et le voice_id optionnel."""
+    try:
+        d = request.get_json() or {}
+        fish_key = str(d.get('fish_api_key', '') or '').strip()
+        fish_voice_id = str(d.get('fish_voice_id', '') or '').strip()
+        if not fish_key:
+            return jsonify({"ok": False, "error": "fish_api_key requis"}), 400
+        AUDIO_CONFIG['fish_api_key'] = fish_key
+        AUDIO_CONFIG['fish_voice_id'] = fish_voice_id
+        saved = save_settings()
+        if saved:
+            stealth_print(f"🐟 Fish Audio configuré (voice_id={fish_voice_id or 'zero-shot'})")
+        return jsonify({"ok": saved, "config_file": str(CONFIG_FILE)}), (200 if saved else 500)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route('/config/reset', methods=['POST'])
 def api_factory_reset():
     """ Supprime les réglages et recharge les défauts """
@@ -5477,6 +5496,15 @@ def set_full_config():
             "error": "VOICE_LICENSE_REQUIRED",
             "message": "Licence Voice requise pour activer Kommz Voice."
         }), 403
+    # FISH_AUDIO : pas de licence requise, juste une clé API
+    if requested_engine == "FISH_AUDIO":
+        fish_key = str(AUDIO_CONFIG.get("fish_api_key", "") or "").strip()
+        if not fish_key:
+            return jsonify({
+                "ok": False,
+                "error": "FISH_API_KEY_REQUIRED",
+                "message": "Clé API Fish Audio requise pour activer ce moteur. Configurez-la dans les réglages."
+            }), 403
     if requested_engine:
         AUDIO_CONFIG["tts_engine"] = requested_engine
     
@@ -8314,6 +8342,70 @@ def deepgram_transcribe_local(audio_path, api_key):
         stealth_print(f"⚠️ Erreur Deepgram Local: {e}")
     return "", "fr"        
 
+def fish_audio_tts_generator(text: str, api_key: str):
+    """
+    Générateur Fish Audio TTS — appelle api.fish.audio/v1/tts
+    et retourne l'audio WAV en bytes.
+    Utilise fish_voice_id si configuré (référence pré-uploadée),
+    sinon zero-shot avec le buffer micro ou preset vocal.
+    """
+    import requests as _req
+    import base64 as _b64
+
+    FISH_TTS_URL = "https://api.fish.audio/v1/tts"
+    voice_id = str(AUDIO_CONFIG.get("fish_voice_id", "") or "").strip()
+
+    payload: dict = {
+        "text": text,
+        "format": "wav",
+        "latency": "normal",
+        "normalize": True,
+    }
+
+    if voice_id:
+        payload["reference_id"] = voice_id
+    else:
+        # Zero-shot : utilise le buffer micro ou preset vocal
+        audio_source = None
+        preset_buf = PRESET_VOICE_BUFFER
+        last_buf   = LAST_USER_AUDIO_BUFFER
+        if preset_buf is not None:
+            audio_source = preset_buf
+        elif last_buf is not None:
+            audio_source = last_buf
+
+        if audio_source:
+            payload["references"] = [{
+                "audio": _b64.b64encode(audio_source).decode(),
+                "text": "",
+            }]
+        else:
+            stealth_print("⚠️ Fish Audio: pas de référence vocale disponible")
+
+    try:
+        resp = _req.post(
+            FISH_TTS_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=60,
+        )
+        if resp.ok and resp.content:
+            stealth_print(f"🐟 Fish Audio TTS OK ({len(resp.content)} bytes)")
+            yield resp.content
+        else:
+            err = ""
+            try: err = resp.json().get("message", resp.text[:200])
+            except Exception: err = resp.text[:200]
+            stealth_print(f"⚠️ Fish Audio TTS error {resp.status_code}: {err}")
+            yield b""
+    except Exception as e:
+        stealth_print(f"⚠️ Fish Audio TTS exception: {e}")
+        yield b""
+
+
 def windows_natural_generator(text, specific_speed=None, voice_override=None):
     """
     Générateur Polyvalent :
@@ -9478,6 +9570,19 @@ def _reinforce_laugh_transcript(text: str) -> str:
             stealth_print("🔊 Lancement Kommz Voice...")
             gen = kommz_tts_generator(trans)
             threading.Thread(target=resample_and_play, args=(gen, "", "MOI", 24000)).start()
+
+        # --- OPTION 3 : FISH AUDIO ---
+        elif current_engine == "FISH_AUDIO":
+            fish_key = str(AUDIO_CONFIG.get("fish_api_key", "") or "").strip()
+            if fish_key:
+                stealth_print("🐟 Lancement Fish Audio TTS...")
+                gen = fish_audio_tts_generator(trans, fish_key)
+                threading.Thread(target=resample_and_play, args=(gen, "", "MOI", 24000)).start()
+            else:
+                stealth_print("⚠️ Fish Audio: clé API absente, fallback Edge TTS")
+                gen = windows_natural_generator(trans)
+                threading.Thread(target=resample_and_play, args=(gen, "", "MOI", 16000)).start()
+
         else:
             stealth_print("🔊 Lancement Edge TTS...")
             gen = windows_natural_generator(trans)

@@ -1068,6 +1068,7 @@
             <select id="selEngine" class="full-width">
                 <option value="WINDOWS">Windows / Edge (Gratuit)</option>
 				<option value="KOMMZ_VOICE">🎙️ Kommz Voice (Cloud)</option>
+                <option value="FISH_AUDIO">🐟 Fish Audio (Premium)</option>
                 
             </select>
         </div>
@@ -1533,6 +1534,29 @@
                💾 ACTIVER KOMMZ VOICE
             </button>
        </div>
+    </div>
+
+    <!-- Fish Audio Config -->
+    <div id="divFishConfig" class="card hidden" style="border-color: #22c55e;">
+        <h3>🐟 FISH AUDIO (Premium)</h3>
+        <p style="font-size:11px; color:var(--muted); margin-bottom:12px;">
+            Clonage vocal haute qualité via Fish Audio API.
+            Obtenez une clé sur <a href="https://fish.audio" target="_blank" style="color:#22c55e;">fish.audio</a>
+        </p>
+        <div class="row">
+            <div class="col">
+                <label>Clé API Fish Audio</label>
+                <input type="password" id="cfgFishApiKey" class="full-width" placeholder="sk-fish-..." />
+            </div>
+            <div class="col">
+                <label>Voice ID (optionnel)</label>
+                <input type="text" id="cfgFishVoiceId" class="full-width" placeholder="ID voix pré-enregistrée" />
+            </div>
+        </div>
+        <button class="primary" style="margin-top:12px; background:#16a34a; border-color:#16a34a;"
+            onclick="saveFishConfig()">
+            💾 SAUVEGARDER FISH AUDIO
+        </button>
     </div>
 
     <div id="tab-voice-studio" class="section">
@@ -3765,9 +3789,11 @@
     function updateUIBasedOnEngine(engine) {
         qs('#divEdgeConfig').classList.add('hidden');
         qs('#divKommzConfig').classList.add('hidden');
+        qs('#divFishConfig').classList.add('hidden');
 
         if (engine === 'WINDOWS') qs('#divEdgeConfig').classList.remove('hidden');
         else if (engine === 'KOMMZ_VOICE') qs('#divKommzConfig').classList.remove('hidden');
+        else if (engine === 'FISH_AUDIO') qs('#divFishConfig').classList.remove('hidden');
     }
 
     function applyVoiceLock(locked) {
@@ -6177,6 +6203,25 @@
 
 		// Bouton Sauvegarder (explicite) — appelle la même fonction
 		qs('#btnSaveAudioConfig').onclick = saveAudioConfig;
+
+		async function saveFishConfig() {
+		    const key = qs('#cfgFishApiKey')?.value?.trim() || '';
+		    const voiceId = qs('#cfgFishVoiceId')?.value?.trim() || '';
+		    if (!key) { showToast('❌ Clé API Fish Audio requise'); return; }
+		    try {
+		        const r = await fetch(CORE_URL + '/config/fish', {
+		            method: 'POST',
+		            headers: {'Content-Type': 'application/json'},
+		            body: JSON.stringify({ fish_api_key: key, fish_voice_id: voiceId })
+		        });
+		        const d = await r.json().catch(() => ({}));
+		        if (d.ok) showToast('✅ Fish Audio configuré');
+		        else showToast('❌ ' + (d.error || 'Erreur sauvegarde Fish Audio'));
+		    } catch(e) {
+		        console.error('saveFishConfig error:', e);
+		        showToast('❌ Erreur JS: ' + e.message);
+		    }
+		}
 
         const ttsVolumeSlider = qs('#rngTtsVolume');
         const ttsVolumeLabel = qs('#lblTtsVolume');

@@ -312,6 +312,9 @@ AUDIO_CONFIG = {
     "mini_overlay_enabled":  False,
     "kommz_client_id":       "",
     "voice_active_id":       "",
+    # --- Fish Audio API (V5.4) ---
+    "fish_api_key":          "",
+    "fish_voice_id":         "",
 }
 
 
