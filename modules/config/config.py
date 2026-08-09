@@ -9,9 +9,11 @@ pour éviter les imports circulaires.
 """
 
 import os
+import sys
 import json
 import time
 import re
+import shutil
 from pathlib import Path
 
 
@@ -21,24 +23,92 @@ from pathlib import Path
 
 _BASE_DIR = Path(__file__).parent.parent.parent
 
+def _get_persistent_config_dir() -> Path:
+    """Retourne le répertoire de configuration persistant (APPDATA).
+    En mode buildé (PyInstaller frozen OU Nuitka __compiled__),
+    on utilise %LOCALAPPDATA%\\KommzGamer pour la persistance réelle."""
+    is_compiled = (
+        getattr(sys, "frozen", False)       # PyInstaller
+        or getattr(sys, "__compiled__", False)  # Nuitka (onefile + standalone)
+        or "__compiled__" in dir(sys)           # Nuitka fallback
+    )
+    if is_compiled:
+        appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "KommzGamer"
+    return _BASE_DIR
+
 def _resolve_config_file() -> Path:
-    """Trouve le bon fichier settings en cherchant dans l'ordre."""
+    """Trouve le bon fichier settings en cherchant dans l'ordre.
+
+    🔥 FIX PERSISTENCE EXEmode : en frozen onefile, _BASE_DIR pointe vers
+    _MEIPSS (répertoire TEMPORAIRE en lecture seule). Si on charge le settings
+    directement depuis _MEIPSS, ``save_settings()`` échouera (PermissionError
+    sur un dossier temporaire en lecture seule) → AUCUNE persistance possible.
+
+    Donc en frozen, on force TOUJOURS la migration depuis _MEIPSS vers
+    %LOCALAPPDATA\\KommzGamer\\settings.private.json (persisté) au premier
+    lancement, et on retourne ce chemin persisté comme CONFIG_FILE.
+    Cela garantit que load_settings lit le bon fichier ET que save_settings
+    peut écrire dessus.
+    """
+    config_dir = _get_persistent_config_dir()
     # 1. Variable d'environnement si déjà chargée
     env_file = os.environ.get("KOMMZ_SETTINGS_FILE", "")
     if env_file:
-        p = _BASE_DIR / env_file
+        p = config_dir / env_file
         if p.exists():
             return p
-    # 2. settings.private.json (édition private)
-    p = _BASE_DIR / "settings.private.json"
-    if p.exists():
-        return p
-    # 3. settings.json (fallback)
-    p = _BASE_DIR / "settings.json"
-    if p.exists():
-        return p
-    # 4. Défaut
-    return _BASE_DIR / "settings.private.json"
+    # --- FIX EXEmode : migration forcée vers le dossier persistant ---
+    # search_dirs : _MEIPSS (via _BASE_DIR ou sys._MEIPASS) + exe dir + config_dir
+    search_dirs = [_BASE_DIR]
+    if getattr(sys, "frozen", False):
+        # _MEIPSS contient les data files inclus (settings.private.json via --include-data-files)
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            mp = Path(meipass)
+            if mp not in search_dirs:
+                search_dirs.append(mp)
+        try:
+            exe_dir = Path(sys.executable).resolve().parent
+            if exe_dir not in search_dirs:
+                search_dirs.append(exe_dir)
+        except Exception:
+            pass
+    legacy_files = ["settings.private.json", "settings.json"]
+    # Si on est en frozen (buildé) : on copie toujours depuis la source livrée
+    # (MEIPSS/exe) vers le dossier persistant, même si un settings persistant
+    # existe déjà — on ne veut JAMAIS lire/écrire depuis _MEIPSS (lecture seule).
+    is_frozen = getattr(sys, "frozen", False)
+    for fname in legacy_files:
+        for base in search_dirs:
+            legacy = base / fname
+            if not legacy.exists():
+                continue
+            dest = config_dir / fname
+            if not dest.exists():
+                try:
+                    config_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(legacy, dest)
+                except Exception as e:
+                    print(f"⚠️ Config migration error: {e}", file=sys.stderr, flush=True)
+                    try:
+                        config_dir.mkdir(parents=True, exist_ok=True)
+                        dest.write_text("{}", encoding="utf-8")
+                    except Exception as e2:
+                        print(f"⚠️ Config fallback create error: {e2}", file=sys.stderr, flush=True)
+            if dest.exists():
+                return dest
+            # migration échouée → continue la boucle
+    # fallback si aucun legacy trouvé ou migration impossible
+    dest = config_dir / "settings.private.json"
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        if not dest.exists():
+            dest.write_text("{}", encoding="utf-8")
+    except Exception as e:
+        print(f"⚠️ Config dir create error: {e}", file=sys.stderr, flush=True)
+    return dest
 
 CONFIG_FILE = _resolve_config_file()
 
@@ -103,12 +173,13 @@ AUDIO_CONFIG = {
     "monitoring_output_device": None,
     "game_input_device": None,
     "game_output_device": None,
+    "mic_input_device": None,
+    "output_device": None,
+    # --- Champs canoniques V5.4 (résolution audio stable hostapi+nom) ---
     "game_input_device_key": "",
     "game_output_device_key": "",
     "game_input_device_runtime": {},
     "game_output_device_runtime": {},
-    "mic_input_device": None,
-    "output_device": None,
     "target_lang": "en",
     "source_lang": "fr",
     "voice": "fr-FR-DeniseNeural",
@@ -335,21 +406,33 @@ def _apply_edition_profile_constraints() -> bool:
 # CONFIG MANAGEMENT FUNCTIONS
 # ============================================================================
 
-def save_settings():
-    """Sauvegarde universelle pour Kommz V8.3 — avec retry atomique"""
+def save_settings() -> bool:
+    """Sauvegarde universelle pour Kommz V8.3 — avec retry atomique.
+    Retourne True si la sauvegarde a réussi, False sinon."""
+    last_err = None
     for attempt in range(3):
         try:
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
             tmp = str(CONFIG_FILE) + ".tmp"
             with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(_repair_payload_strings(AUDIO_CONFIG), f, indent=4, ensure_ascii=False)
             os.replace(tmp, str(CONFIG_FILE))
-            return
-        except PermissionError:
+            return True
+        except PermissionError as e:
+            last_err = e
             if attempt < 2:
                 time.sleep(0.05)
         except Exception as e:
+            last_err = e
             if attempt < 2:
                 time.sleep(0.05)
+    print(
+        f"⚠️ save_settings() échec après 3 tentatives : "
+        f"{last_err} — chemin : {CONFIG_FILE}",
+        file=sys.stderr,
+        flush=True,
+    )
+    return False
 
 
 def load_settings():

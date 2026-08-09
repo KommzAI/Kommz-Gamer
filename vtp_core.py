@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
+import os
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+os.environ["QT_SCALE_FACTOR"] = "1"
 """
 VTP Core - DIAMOND EDITION v8.3 (STABLE & FINAL)
 - Moteur Audio : Deepgram Nova-2 (Optimisé 7.1 / 16ch)
 - Output : Correction MME/WASAPI pour ROG Theta & VB-Cable
 - Fix : NumPy 2.0 Compatibility (frombuffer)
 """
+
+# Fix DPI Awareness pour Qt/PyWebView (avant tous les imports)
+try:
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    pass
 
 # --- ÉTAPE 1 : IMPORTS ---
 import re
@@ -66,17 +77,9 @@ try:
 except Exception:
     _afp = None
 
-# --- AJOUT CRITIQUE POUR ÉVITER L'ECHO ---
-AUDIO_GATE_LOCKED = False  # Quand c'est True, l'IA arrête d'écouter
-import threading
-AUDIO_LOCK = threading.Lock()
-# Stockage Audio en RAM (Pour éviter le disque dur)
-LAST_AUDIO_BUFFER = None
-# --- MEMOIRE RAM (VITESSE LUMIÈRE) ---
-LAST_USER_AUDIO_BUFFER = None   # Stocke le micro du joueur (Capture instantanée)
-PRESET_VOICE_BUFFER = None      # Stocke la voix téléchargée depuis Supabase (Batman, etc.)
-CURRENT_PRESET_ID = None        # Pour savoir quelle voix est chargée
-
+# ============================================================================
+# ENVIRONMENT LOADING
+# ============================================================================
 def load_local_env_file():
     """Charge .env local (utile pour exe desktop), avec fallback sans python-dotenv."""
     candidates = []
@@ -109,10 +112,69 @@ def load_local_env_file():
 
 load_local_env_file()
 
+# ============================================================================
+# CONFIGURATION MODULE IMPORT
+# ============================================================================
+from modules.config.config import (
+    AUDIO_CONFIG,
+    save_settings,
+    load_settings,
+    EDITION_PROFILE,
+    CONFIG_FILE,
+    _repair_payload_strings,
+    _repair_display_text,
+)
+
+# LICENSE MODULE IMPORT
+# ============================================================================
+from modules.license import *
+
+# AUDIO MODULE IMPORT
+# ============================================================================
+from modules.audio.utils import (
+    StreamBuffer,
+    resample_audio,
+    pcm_bytes_to_float32,
+    CHUNK_SIZE,
+    _STREAM_BUFFER_TOTAL_DROPS,
+    _STREAM_BUFFER_DROPS_LOCK,
+)
+
+# TTS MODULE IMPORT
+# ============================================================================
+from modules.tts import register_tts_module
+from modules.stt import register_stt_module
+from modules.privacy import privacy_bp
+from modules.license import license_bp
+from modules.overlay import overlay_bp, register_scenes_runtime
+from modules.listen import listen_bp
+from modules.remote import remote_bp
+from modules.guide import guide_bp
+from modules.scenes import scenes_bp
+from modules.config import config_bp
+from modules.ui import ui_bp
+from modules.audio import audio_bp
+from modules.cloud import cloud_bp
+from modules.subs import subs_bp
+
+# --- AJOUT CRITIQUE POUR ÉVITER L'ECHO ---
+AUDIO_GATE_LOCKED = False  # Quand c'est True, l'IA arrête d'écouter
+import threading
+AUDIO_LOCK = threading.Lock()
+
+# FIX #5: Event global pour remplacer time.sleep() dans les boucles watchdog/background.
+# Permet de libérer le GIL proprement et de réveiller les threads immédiatement si besoin.
+_PERF_STOP_EVENT = threading.Event()
+# Stockage Audio en RAM (Pour éviter le disque dur)
+LAST_AUDIO_BUFFER = None
+# --- MEMOIRE RAM (VITESSE LUMIÈRE) ---
+LAST_USER_AUDIO_BUFFER = None   # Stocke le micro du joueur (Capture instantanée)
+PRESET_VOICE_BUFFER = None      # Stocke la voix téléchargée depuis Supabase (Batman, etc.)
+CURRENT_PRESET_ID = None        # Pour savoir quelle voix est chargée
+
 # Edition profile:
 # - private   : full cloud stack (Modal/Supabase/License)
 # - community : local/community mode (no cloud keys required)
-EDITION_PROFILE = str(os.environ.get("KOMMZ_EDITION_PROFILE", "private") or "private").strip().lower()
 if EDITION_PROFILE not in {"private", "community"}:
     EDITION_PROFILE = "private"
 COMMUNITY_EDITION = EDITION_PROFILE == "community"
@@ -146,140 +208,6 @@ if not CLOUD_FEATURES_ENABLED:
     DEFAULT_KOMMZ_WHISPER_URL = ""
 
 # 1. UNE SEULE DÉFINITION COMPLÈTE (Ne pas en remettre une autre plus bas !)
-AUDIO_CONFIG = {
-
-    # --- CONFIG KOMMZ VOICE ---
-    "kommz_api_url": DEFAULT_KOMMZ_CLONE_URL,
-    "kommz_synthesis_url": DEFAULT_KOMMZ_SYNTHESIS_URL,
-    "kommz_api_key": "",          # AJOUT
-    "kommz_client_id": "",        # AJOUT
-    "kommz_model_mode": "turbo",
-    "kommz_speed": 1.0,
-    "kommz_temp": 0.7,
-    "kommz_xtts_preset": "stable",
-    "kommz_top_k": 60,
-    "kommz_top_p": 0.90,
-    "kommz_repetition_penalty": 2.2,
-    "kommz_length_penalty": 1.0,
-    "kommz_enable_text_splitting": True,
-    "kommz_gpt_cond_len": 12,
-    "kommz_gpt_cond_chunk_len": 4,
-    "kommz_max_ref_len": 10,
-    "kommz_sound_norm_refs": False,
-    "gpt_style_to_xtts_fr": False,
-    "hybrid_fast_rts": True,
-    "hybrid_rts_preset": "fast",
-    "quality_preset": "balanced",
-    "gpt_api_url": os.environ.get("KOMMZ_GPTSOVITS_URL", "").strip(),
-    "gpt_ref_audio_path": "",
-    "gpt_prompt_text": "",
-    "gpt_prompt_lang": "ja",
-    "gpt_style_text": "よし、行くぞ!",
-    "gpt_style_text_lang": "ja",
-    "expressive_sounds_enabled": True,
-    "expressive_profile": "gaming",
-    "expressive_transcript_mode": "keep",
-    "expressive_tts_mode": "styled",
-    "expressive_intensity_mode": "auto",
-    "expressive_noise_mode": "smart",
-    "expressive_xtts_mode": "auto",
-    "expressive_hybrid_mode": "auto",
-    "expressive_stability_mode": "balanced",
-    "expressive_fallback_guard": True,
-    "expressive_ptt_mode": "full",
-    "expressive_rts_mode": "safe",
-    "whisper_api_url": DEFAULT_KOMMZ_WHISPER_URL,
-    "whisper_model": DEFAULT_KOMMZ_WHISPER_MODEL,
-    # --------------------------
-
-    "user_overlay_color": "#00FFFF",
-    "ally_overlay_color": "#FFFF00",
-    
-    # --- CORRECTIONS SONORE ---
-    "monitoring_enabled": True,  # <--- METTRE SUR TRUE (Sinon tu n'entends rien au casque !)
-    "monitoring_output_device": None,
-    "tts_active": True,          # <--- F2 : Activé par défaut
-    
-    "tts_engine": "WINDOWS",
-    "edge_voice": "fr-FR-VivienneMultilingualNeural",
-    "windows_tts_rate": "-10%",
-    "game_output_device": 0,
-    "game_input_device": 0,
-    "is_listening": True, "seamless_prefix_active": False, "turbo_latency_active": True,
-    "smart_commands_active": True, "teamsync_ai_active": True,
-    "esport_mode_active": False, "stealth_mode_active": False,
-    "shadow_ai_active": False, "auto_context_active": True,
-    "auto_update_active": True, "hybrid_activation_active": False,
-    "gamesense_overlay_active": True, "bypass_mode_active": False, "vad_threshold": 0.025, 
-    "tts_volume": 1.0,
-    "show_own_subs_active": True,
-    "show_ally_subs_active": True,
-    "tilt_shield_active": True,
-    "stream_connect_active": True,
-    "tactical_macros_active": True,
-    "target_lang": "fr",
-    "ally_recognition_lang": "multi",
-    "ally_block_french": True,
-    # Listen-mode tuning (allies): helps short/fast in-game voice chat.
-    "ally_sentence_punct_min_words": 3,
-    "ally_sentence_hard_flush_words": 10,
-    "ally_tts_similarity_play_below": 0.85,
-    "ally_tts_duplicate_window_s": 3.0,
-    # Anti-"texte sans voix": force une restitution minimale sur speech_final court.
-    "ally_tts_force_on_speech_final": True,
-    "ally_tts_force_min_chars": 8,
-    "ally_tts_min_gap_s": 0.55,
-    "ally_tts_short_merge_words": 3,
-    "ally_tts_short_merge_chars": 18,
-    "ally_tts_short_merge_window_s": 1.25,
-    "ally_tts_rate_limit_window_s": 10.0,
-    "ally_tts_rate_limit_max_plays": 5,
-    # Focus voix (écoute joueurs): limite le son jeu dans la transcription.
-    # off | balanced | aggressive | auto
-    "ally_voice_focus_mode": "balanced",
-    # Auto-tune écoute: assouplit temporairement les filtres si trop de textes
-    # sont détectés sans restitution vocale alliée.
-    "ally_autotune_enabled": True,
-    "ally_listen_profile": "default",
-    "ally_game_preset": "custom",
-    "ally_preset_library": [],
-    "ally_preset_schedule": [],
-    "ally_community_preset_ratings": {},
-    "ally_competitive_lock": False,
-    "ally_competitive_lock_auto": True,
-    "ally_competitive_unlock_until_ts": 0.0,
-    "privacy_words": [],
-    "privacy_sentinel_active": False,
-    "polyglot_active": False,
-    "smart_marker_active": False,
-    "voice_library": [],
-    "voice_active_id": "",
-    "voice_default_at_startup": True,
-    "scene_library": [],
-    "scene_active_name": "",
-    "scene_last_applied_at": "",
-    "scene_auto_apply_enabled": False,
-    "scene_auto_process": "",
-    "ptt_hotkey": "ctrl+shift",
-    # Small tail capture to avoid cutting final syllables on key release.
-    "ptt_release_tail_ms": 180,
-    # Debounce clavier pour éviter les doubles triggers press/release en jeu.
-    "ptt_debounce_ms": 35,
-    # Ignore les captures trop courtes (parasites de touche).
-    "ptt_min_record_ms": 90,
-    # Watchdog écoute longue session: anti faux-positifs en silence prolongé.
-    "listen_watchdog_idle_threshold_s": 75,
-    "listen_watchdog_stream_stale_s": 22,
-    # V5.2: Alertes watchdog configurables
-    "watchdog_alert_sound": True,        # Beep système au restart
-    "watchdog_alert_overlay": True,      # Toast overlay desktop
-    "watchdog_alert_logfile": True,      # Log détaillé dans vtp_core.log
-    "watchdog_alert_flap_cooldown_s": 30,  # Cooldown entre alertes (évite spam)
-    "mini_overlay_enabled": True,           # V5.2: Mini overlay desktop stats temps reel
-    "is_capturing": False,
-    # Suivi local du quota cloud en mode essai (30 min = 1800s).
-    "trial_voice_seconds_used_local": 0
-}
 
 MOJIBAKE_MARKERS = ("Ã", "â", "ð", "Â", "ï¸", "œ", "ž", "¢")
 _ESCAPED_UTF8_RUN_RE = re.compile(r"(?:\\u00[0-9a-fA-F]{2}){2,}")
@@ -314,76 +242,23 @@ def _decode_escaped_utf8_runs(text: str) -> str:
         return text
 
 
-def _repair_display_text(value):
-    if value is None or not isinstance(value, str):
-        return value
-    text = value.replace("\ufeff", "")
-    text = _decode_escaped_utf8_runs(text)
-    try:
-        # Common case: text became latin-1 mojibake ("é"), convert back to UTF-8.
-        if any(marker in text for marker in MOJIBAKE_MARKERS):
-            text_l1 = text.encode("latin-1", errors="ignore").decode("utf-8", errors="ignore")
-            if text_l1 and _mojibake_score(text_l1) <= _mojibake_score(text):
-                text = text_l1
-    except Exception:
-        pass
-    if not _ftfy_fix_text:
-        return text
-    if not any(marker in text for marker in MOJIBAKE_MARKERS):
-        return text
-    try:
-        fixed = _ftfy_fix_text(text)
-        if fixed and _mojibake_score(fixed) <= _mojibake_score(text):
-            return fixed
-    except Exception:
-        pass
-    return text
 
 
-def _repair_payload_strings(value):
-    if isinstance(value, dict):
-        return {k: _repair_payload_strings(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_repair_payload_strings(v) for v in value]
-    if isinstance(value, tuple):
-        return tuple(_repair_payload_strings(v) for v in value)
-    if isinstance(value, str):
-        return _repair_display_text(value)
-    return value
 
 
 # Répare immédiatement les valeurs par défaut visibles (UI/logs/config)
 # pour éviter que des chaînes historiques mojibakées ne réapparaissent
 # avant même le chargement du settings.json.
-AUDIO_CONFIG = _repair_payload_strings(AUDIO_CONFIG)
-CONFIG_FILE = str(os.environ.get("KOMMZ_SETTINGS_FILE", "settings.json") or "settings.json").strip() or "settings.json"
+# IMPORTANT : mutation EN PLACE (clear+update) au lieu de réassignation,
+# pour conserver la même référence dict que modules.config.config.AUDIO_CONFIG.
+# Sinon save_settings() / load_settings() agiraient sur l'ancien dict, et
+# les modifs faites depuis les routes Flask seraient invisibles côté disque.
+_repaired_initial = _repair_payload_strings(AUDIO_CONFIG)
+AUDIO_CONFIG.clear()
+AUDIO_CONFIG.update(_repaired_initial)
+del _repaired_initial
 
 
-def _apply_edition_profile_constraints() -> bool:
-    changed = False
-    if not CLOUD_FEATURES_ENABLED:
-        cloud_fields = (
-            "kommz_api_url",
-            "kommz_synthesis_url",
-            "kommz_api_key",
-            "kommz_client_id",
-            "gpt_api_url",
-            "whisper_api_url",
-            "license_key",
-            "voice_license_key",
-            "license_email",
-        )
-        for k in cloud_fields:
-            if str(AUDIO_CONFIG.get(k, "") or "").strip():
-                AUDIO_CONFIG[k] = ""
-                changed = True
-        if bool(AUDIO_CONFIG.get("gpt_style_to_xtts_fr", False)):
-            AUDIO_CONFIG["gpt_style_to_xtts_fr"] = False
-            changed = True
-        if str(AUDIO_CONFIG.get("tts_engine", "WINDOWS") or "WINDOWS").upper() == "KOMMZ_VOICE":
-            AUDIO_CONFIG["tts_engine"] = "WINDOWS"
-            changed = True
-    return changed
 
 
 def _utc_now_iso() -> str:
@@ -624,14 +499,14 @@ def scene_auto_apply_loop():
     while True:
         try:
             if not _to_bool(AUDIO_CONFIG.get("scene_auto_apply_enabled", False), False):
-                time.sleep(1.5)
+                _PERF_STOP_EVENT.wait(1.5)
                 continue
             current_proc = _get_foreground_process_name()
             if not current_proc:
-                time.sleep(1.2)
+                _PERF_STOP_EVENT.wait(1.2)
                 continue
             if current_proc == _SCENE_AUTO_LAST_PROCESS:
-                time.sleep(1.2)
+                _PERF_STOP_EVENT.wait(1.2)
                 continue
             _SCENE_AUTO_LAST_PROCESS = current_proc
             target_scene = None
@@ -655,7 +530,7 @@ def scene_auto_apply_loop():
                         _SCENE_AUTO_LAST_SCENE = forced_scene
         except Exception:
             pass
-        time.sleep(1.2)
+        _PERF_STOP_EVENT.wait(1.2)
 
 # V5.3: Game auto-detect loop — detecte et applique le preset automatiquement
 def game_auto_detect_loop():
@@ -665,7 +540,7 @@ def game_auto_detect_loop():
     apply_cooldown_s = 10.0
     while True:
         try:
-            time.sleep(2.0)
+            _PERF_STOP_EVENT.wait(2.0)
             if not _to_bool(AUDIO_CONFIG.get("game_auto_detect_enabled", False), False):
                 _game_detect_auto_mode = False
                 last_detected_game = None
@@ -673,7 +548,7 @@ def game_auto_detect_loop():
             _game_detect_auto_mode = True
             current_preset = str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom").strip().lower()
             if current_preset != "auto":
-                time.sleep(5.0)
+                _PERF_STOP_EVENT.wait(5.0)
                 continue
             proc = _get_foreground_process_name()
             win_title = _get_foreground_window_title() or ""
@@ -732,13 +607,13 @@ def game_auto_detect_loop():
             if not effective:
                 last_detected_game = None
         except Exception:
-            time.sleep(3.0)
+            _PERF_STOP_EVENT.wait(3.0)
 
 def save_config():
     """Sauvegarde la configuration actuelle dans le fichier de profil."""
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(_repair_payload_strings(AUDIO_CONFIG), f, indent=4, ensure_ascii=False)
+        from modules.config.config import save_settings
+        save_settings()
         # On utilise stealth_print si dispo, sinon print
         try:
             stealth_print("💾 Config sauvegardée.")
@@ -837,24 +712,6 @@ def stealth_print_rl(key: str, message: str, cooldown: float = 20.0) -> bool:
         return True
 
 
-def save_settings():
-    """Sauvegarde universelle pour Kommz V8.3 — avec retry atomique"""
-    for attempt in range(3):
-        try:
-            tmp = str(CONFIG_FILE) + ".tmp"
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(_repair_payload_strings(AUDIO_CONFIG), f, indent=4, ensure_ascii=False)
-            os.replace(tmp, str(CONFIG_FILE))
-            if attempt == 0:
-                stealth_print("💾 Configuration sauvegardée.")
-            return
-        except PermissionError:
-            if attempt < 2:
-                time.sleep(0.05)
-        except Exception as e:
-            if attempt < 2:
-                time.sleep(0.05)
-    stealth_print("❌ Erreur sauvegarde JSON (après 3 tentatives)")
 
 
 def _is_turbo_mode_active() -> bool:
@@ -886,72 +743,6 @@ def _is_stealth_critical_message(text: str) -> bool:
     msg_up = msg.upper()
     return any(marker in msg_up for marker in critical_markers)
 
-def load_settings():
-    global AUDIO_CONFIG, CURRENT_TARGET_LANG
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8-sig') as f:
-                saved_data = json.load(f)
-                saved_data_repaired = _repair_payload_strings(saved_data)
-                saved_data_was_repaired = saved_data_repaired != saved_data
-                saved_data = saved_data_repaired
-                
-                # Correction intelligente des IDs audio
-                for key in ["game_output_device", "game_input_device"]:
-                    if key in saved_data:
-                        val = saved_data[key]
-                        if isinstance(val, str) and val.isdigit():
-                            saved_data[key] = int(val)
-                        elif not isinstance(val, int):
-                            saved_data[key] = 0
-                
-                AUDIO_CONFIG.update(saved_data)
-                # Auto-répare les URLs Kommz si settings.json est ancien/vide.
-                changed = False
-                if saved_data_was_repaired:
-                    changed = True
-                if not str(AUDIO_CONFIG.get("kommz_api_url", "") or "").strip():
-                    AUDIO_CONFIG["kommz_api_url"] = DEFAULT_KOMMZ_CLONE_URL
-                    changed = True
-                if not str(AUDIO_CONFIG.get("kommz_synthesis_url", "") or "").strip():
-                    AUDIO_CONFIG["kommz_synthesis_url"] = DEFAULT_KOMMZ_SYNTHESIS_URL
-                    changed = True
-                if not str(AUDIO_CONFIG.get("whisper_api_url", "") or "").strip():
-                    AUDIO_CONFIG["whisper_api_url"] = DEFAULT_KOMMZ_WHISPER_URL
-                    changed = True
-                if not str(AUDIO_CONFIG.get("whisper_model", "") or "").strip():
-                    AUDIO_CONFIG["whisper_model"] = DEFAULT_KOMMZ_WHISPER_MODEL
-                    changed = True
-                raw_preset = str(AUDIO_CONFIG.get("quality_preset", "balanced") or "balanced").strip().lower()
-                preset_after = _apply_quality_preset(raw_preset, emit_log=False)
-                if raw_preset != preset_after:
-                    changed = True
-                # Forçage demandé: ignorer le français en mode écoute allié.
-                AUDIO_CONFIG["ally_block_french"] = True
-                
-                # ✅ CORRECTION CRITIQUE : On recharge la langue cible au démarrage
-                if "target_lang" in AUDIO_CONFIG:
-                    raw = AUDIO_CONFIG["target_lang"]
-                    # Mapping rapide pour être sûr que le code est bon
-                    deepl_map = {"EN": "EN-US", "PT": "PT-PT", "UA": "UK", "BR": "PT-BR", "IN": "HI", "VN": "VI", "JP": "JA", "ZH": "ZH"}
-                    CURRENT_TARGET_LANG = deepl_map.get(raw, raw)
-                if _maybe_enable_hybrid_fr_default():
-                    changed = True
-                    stealth_print("🧪 Hybrid auto-activé au démarrage.")
-                if _apply_edition_profile_constraints():
-                    changed = True
-                
-                if changed:
-                    save_settings()
-                    stealth_print("🔧 Configuration Kommz auto-ajustée au chargement.")
-                if "_refresh_module_runtime_defaults" in globals():
-                    _refresh_module_runtime_defaults()
-                stealth_print(f"✅ CONFIG CHARGÉE : Sortie ID={AUDIO_CONFIG['game_output_device']} | Langue={CURRENT_TARGET_LANG}")
-        except Exception as e:
-            stealth_print(f"⚠️ Erreur lecture settings : {e}")
-    else:
-        if _apply_edition_profile_constraints():
-            save_settings()
 
 
             
@@ -1033,7 +824,6 @@ import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import filedialog
 import numpy as np
-import sounddevice as sd
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from flask import Flask, request, jsonify, Response, send_from_directory, render_template, send_file
@@ -1044,8 +834,11 @@ import miniaudio
 import keyboard
 import webview
 import tempfile
-import soundfile as sf 
+import soundfile as sf
 import qrcode
+
+# Import soundfile pour les modules
+import soundfile
 import io
 import psutil
 import warnings
@@ -1211,27 +1004,12 @@ def apply_privacy_sentinel(text):
         
     return text, censored
     
+# À DÉPLACER V5.5 — appelé depuis vtp_core runtime
 def _norm_dev_name(name):
     try:
         return unidecode(str(name or "")).upper().strip()
     except Exception:
         return str(name or "").upper().strip()
-
-
-def get_device_index(target_name, as_output=False):
-    """Trouve l'ID d'un périphérique avec recherche souple FR/EN."""
-    try:
-        t = _norm_dev_name(target_name)
-        for i, dev in enumerate(sd.query_devices()):
-            d_name = _norm_dev_name(dev.get("name", ""))
-            if t and (t in d_name or ("CABLE" in t and ("VB-AUDIO" in d_name or "VIRTUAL" in d_name))):
-                if as_output and int(dev.get("max_output_channels", 0)) > 0:
-                    return i
-                if (not as_output) and int(dev.get("max_input_channels", 0)) > 0:
-                    return i
-        return None
-    except Exception:
-        return None
 
 
 def _normalize_device_signature(name, hostapi):
@@ -1870,6 +1648,10 @@ def _apply_voice_focus_signal(mono, sample_rate, mode="off"):
         x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         if x.size == 0:
             return x, 0.0
+        # V5.3 FIX: normalise si signal int16 non converti (évite overflow np.square)
+        peak_raw = float(np.max(np.abs(x))) if x.size else 0.0
+        if peak_raw > 1.0:
+            x = x / max(peak_raw, 1e-6)
 
         m = str(mode or "off").strip().lower()
         if m == "auto":
@@ -2059,6 +1841,10 @@ def _apply_voice_focus_v3(mono, sample_rate):
         x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         if x.size == 0:
             return x, 0.0, False
+        # V5.3 FIX: normalise si le signal vient d'un format int16 non converti (évite overflow np.square)
+        peak_raw = float(np.max(np.abs(x))) if x.size else 0.0
+        if peak_raw > 1.0:
+            x = x / max(peak_raw, 1e-6)
         sr = int(sample_rate or 48000)
         if sr < 8000:
             sr = 8000
@@ -2072,7 +1858,8 @@ def _apply_voice_focus_v3(mono, sample_rate):
         if not calibrated:
             calibrated = _voice_focus_v3_calibrate_step(x, sr, peak, rms)
             if not calibrated:
-                return _apply_voice_focus_signal(x, sr, mode="balanced")
+                sig, pk = _apply_voice_focus_signal(x, sr, mode="balanced")
+                return sig, pk, False  # False = pas encore calibré
 
         n = len(x)
         if n < 64:
@@ -2156,6 +1943,130 @@ def _apply_voice_focus_v3(mono, sample_rate):
         peak = float(np.max(np.abs(x))) if x.size else 0.0
         return x, peak, False
 
+
+# ============================================================
+# V5.3 — VAD V2 : WebRTC VAD + Silero-style RMS fallback
+# ============================================================
+_vad_v2_state = {
+    "backend": "rms",          # "webrtc" | "rms"
+    "webrtc_vad": None,
+    "initialized": False,
+    "speech_ratio_ema": 0.0,
+    "frame_rate": 16000,
+    "frame_ms": 30,            # webrtcvad accepts 10/20/30ms frames
+}
+
+def _vad_v2_init():
+    """Try to load webrtcvad-wheels; fall back to RMS-based VAD silently."""
+    st = _vad_v2_state
+    if st["initialized"]:
+        return
+    st["initialized"] = True
+    try:
+        import webrtcvad
+        vad_obj = webrtcvad.Vad(2)  # aggressiveness 0-3
+        st["webrtc_vad"] = vad_obj
+        st["backend"] = "webrtc"
+        stealth_print("✅ VAD V2: webrtcvad actif (aggressiveness=2)")
+    except ImportError:
+        try:
+            import webrtcvad_wheels as webrtcvad
+            vad_obj = webrtcvad.Vad(2)
+            st["webrtc_vad"] = vad_obj
+            st["backend"] = "webrtc"
+            stealth_print("✅ VAD V2: webrtcvad_wheels actif (aggressiveness=2)")
+        except ImportError:
+            st["backend"] = "rms"
+            stealth_print("⚠️ VAD V2: webrtcvad indisponible, fallback RMS adaptatif")
+    except Exception as e:
+        st["backend"] = "rms"
+        stealth_print(f"⚠️ VAD V2: init échouée ({e}), fallback RMS adaptatif")
+
+
+def _vad_v2_is_speech(mono_float32: "np.ndarray", sample_rate: int) -> bool:
+    """
+    V5.3: Détecte si le frame contient de la parole.
+    Essaie webrtcvad, fallback RMS adaptatif.
+    """
+    st = _vad_v2_state
+    if not st["initialized"]:
+        _vad_v2_init()
+
+    rms = float(np.sqrt(np.mean(np.square(mono_float32)))) if mono_float32.size else 0.0
+    threshold = float(AUDIO_CONFIG.get("vad_threshold", 0.025) or 0.025)
+
+    if st["backend"] == "webrtc" and st["webrtc_vad"] is not None:
+        try:
+            # webrtcvad needs 16kHz int16 PCM, 10/20/30ms frames
+            target_sr = 16000
+            frame_ms = 30
+            frame_samples = int(target_sr * frame_ms / 1000)
+
+            # Resample if needed
+            if sample_rate != target_sr:
+                from_len = len(mono_float32)
+                to_len = int(from_len * target_sr / sample_rate)
+                if to_len > 0:
+                    indices = np.linspace(0, from_len - 1, to_len)
+                    resampled = np.interp(indices, np.arange(from_len), mono_float32).astype(np.float32)
+                else:
+                    resampled = mono_float32
+            else:
+                resampled = mono_float32
+
+            # Process in 30ms frames, take majority vote
+            pcm_int16 = np.clip(resampled * 32767, -32768, 32767).astype(np.int16)
+            total_frames = len(pcm_int16) // frame_samples
+            if total_frames == 0:
+                raise ValueError("Frame trop courte pour webrtcvad")
+
+            speech_frames = 0
+            for i in range(total_frames):
+                frame = pcm_int16[i * frame_samples:(i + 1) * frame_samples]
+                frame_bytes = frame.tobytes()
+                try:
+                    if st["webrtc_vad"].is_speech(frame_bytes, target_sr):
+                        speech_frames += 1
+                except Exception:
+                    pass  # frame size mismatch — skip
+
+            ratio = speech_frames / max(total_frames, 1)
+            # EMA smoothing
+            st["speech_ratio_ema"] = st["speech_ratio_ema"] * 0.7 + ratio * 0.3
+            AUDIO_CONFIG["_vad_v2_speech_ratio"] = round(float(st["speech_ratio_ema"]), 3)
+            return st["speech_ratio_ema"] > 0.35
+
+        except Exception as e:
+            stealth_print(f"⚠️ VAD V2 webrtc frame error, fallback RMS: {e}")
+            # Fallback silently to RMS for this frame
+            st["backend"] = "rms"
+
+    # RMS-based VAD with adaptive threshold (Silero-style behavior)
+    v3_thresh = float(_voice_focus_v3_state.get("vad_threshold_adaptive", threshold))
+    effective_thresh = v3_thresh if _voice_focus_v3_state.get("calibrated", False) else threshold
+    speech = rms > effective_thresh
+    # EMA smoothing
+    st["speech_ratio_ema"] = st["speech_ratio_ema"] * 0.8 + (1.0 if speech else 0.0) * 0.2
+    AUDIO_CONFIG["_vad_v2_speech_ratio"] = round(float(st["speech_ratio_ema"]), 3)
+    return speech
+
+
+def get_vad_v2_status() -> dict:
+    """V5.3: Retourne l'état du VAD V2 pour /status."""
+    st = _vad_v2_state
+    return {
+        "vad_v2_backend": st["backend"],
+        "vad_v2_speech_ratio": round(float(st.get("speech_ratio_ema", 0.0)), 3),
+        "vad_v2_initialized": st["initialized"],
+        "vad_threshold_adaptive": round(float(_voice_focus_v3_state.get("vad_threshold_adaptive", 0.025)), 6),
+    }
+
+# Auto-init VAD V2 at import time (non-blocking)
+try:
+    threading.Thread(target=_vad_v2_init, daemon=True).start()
+except Exception:
+    pass
+
 VOICES_LIBRARY = {
     "Moi (Défaut)": "DEFAULT_USER_VOICE",   
     "Rachel (Femme)": "21m00Tcm4TlvDq8ikWAM",   
@@ -2236,9 +2147,33 @@ LATENCY_RUNTIME_STATE = {
     "stage": "idle",
     "detail": "Aucune activité récente",
     "updated_at": 0.0,
+    # V5.3: Percentiles p50/p95/p99
+    "stt_p50": None, "stt_p95": None, "stt_p99": None,
+    "tts_p50": None, "tts_p95": None, "tts_p99": None,
+    "total_p50": None, "total_p95": None, "total_p99": None,
+    "sample_count": 0,
 }
 
 _latency_runtime_lock = threading.Lock()
+# V5.3: Circular history buffer for percentile computation (last 200 calls)
+_stt_latency_history   = collections.deque(maxlen=200)
+_tts_latency_history   = collections.deque(maxlen=200)
+_total_latency_history = collections.deque(maxlen=200)
+
+def _compute_latency_percentiles():
+    """V5.3: Compute p50/p95/p99 from history buffers. Called inside _latency_runtime_lock."""
+    for key, buf in [("stt", _stt_latency_history), ("tts", _tts_latency_history), ("total", _total_latency_history)]:
+        if len(buf) < 5:
+            LATENCY_RUNTIME_STATE[f"{key}_p50"] = None
+            LATENCY_RUNTIME_STATE[f"{key}_p95"] = None
+            LATENCY_RUNTIME_STATE[f"{key}_p99"] = None
+            continue
+        arr = sorted(buf)
+        n = len(arr)
+        LATENCY_RUNTIME_STATE[f"{key}_p50"] = round(arr[int(n * 0.50)], 1)
+        LATENCY_RUNTIME_STATE[f"{key}_p95"] = round(arr[min(int(n * 0.95), n - 1)], 1)
+        LATENCY_RUNTIME_STATE[f"{key}_p99"] = round(arr[min(int(n * 0.99), n - 1)], 1)
+    LATENCY_RUNTIME_STATE["sample_count"] = len(_stt_latency_history)
 
 EXPRESSIVE_RUNTIME_STATE = {
     "enabled": True,
@@ -2543,15 +2478,26 @@ def _reset_latency_runtime(detail: str = "Traitement en attente"):
 def _record_latency(stage: str, detail: str = "", stt_ms=None, translate_ms=None, tts_ms=None):
     with _latency_runtime_lock:
         if isinstance(stt_ms, (int, float)):
-            LATENCY_RUNTIME_STATE["stt_ms"] = round(float(stt_ms), 1)
+            v = round(float(stt_ms), 1)
+            LATENCY_RUNTIME_STATE["stt_ms"] = v
+            _stt_latency_history.append(v)  # V5.3: feed percentile buffer
         if isinstance(translate_ms, (int, float)):
             LATENCY_RUNTIME_STATE["translate_ms"] = round(float(translate_ms), 1)
         if isinstance(tts_ms, (int, float)):
-            LATENCY_RUNTIME_STATE["tts_ms"] = round(float(tts_ms), 1)
+            v = round(float(tts_ms), 1)
+            LATENCY_RUNTIME_STATE["tts_ms"] = v
+            _tts_latency_history.append(v)  # V5.3: feed percentile buffer
         LATENCY_RUNTIME_STATE["stage"] = _short_runtime_text(stage or "pipeline", 48)
         if detail:
             LATENCY_RUNTIME_STATE["detail"] = _short_runtime_text(detail, 180)
         _refresh_latency_total_locked()
+        # V5.3: feed total latency buffer
+        total = LATENCY_RUNTIME_STATE.get("total_ms")
+        if isinstance(total, (int, float)):
+            _total_latency_history.append(round(float(total), 1))
+        # Compute percentiles every 5 samples (not every call, for performance)
+        if len(_stt_latency_history) % 5 == 0:
+            _compute_latency_percentiles()
         LATENCY_RUNTIME_STATE["updated_at"] = time.time()
 
 
@@ -3795,20 +3741,38 @@ class _DeepgramNoiseFilter(logging.Filter):
         return True
 
 
+class QtDpiFilter(logging.Filter):
+    def filter(self, record):
+        try:
+            message = str(record.getMessage() or "")
+        except Exception:
+            message = ""
+        return "SetProcessDpiAwarenessContext() failed: Accès refusé" not in message
+
+
 _DG_NOISE_FILTER = _DeepgramNoiseFilter()
+_QT_DPI_FILTER = QtDpiFilter()
 for _h in list(logger.handlers):
     try:
         _h.addFilter(_DG_NOISE_FILTER)
+        _h.addFilter(_QT_DPI_FILTER)
     except Exception:
         pass
 for _h in list(logging.getLogger().handlers):
     try:
         _h.addFilter(_DG_NOISE_FILTER)
+        _h.addFilter(_QT_DPI_FILTER)
     except Exception:
         pass
+try:
+    logging.getLogger().addFilter(_QT_DPI_FILTER)
+except Exception:
+    pass
 for _name in ("deepgram", "websockets", "urllib3"):
     try:
-        logging.getLogger(_name).addFilter(_DG_NOISE_FILTER)
+        _named_logger = logging.getLogger(_name)
+        _named_logger.addFilter(_DG_NOISE_FILTER)
+        _named_logger.addFilter(_QT_DPI_FILTER)
     except Exception:
         pass
 
@@ -3821,6 +3785,8 @@ class _StderrNoiseFilter:
             txt = str(msg or "")
             low = txt.lower()
             if ("dpgr.am/net0001" in low) or ("did not receive audio data" in low):
+                return len(txt)
+            if "setprocessdpiawarenesscontext() failed: accès refusé" in low:
                 return len(txt)
         except Exception:
             pass
@@ -3847,158 +3813,6 @@ if str(os.environ.get("KOMMZ_FILTER_NET0001", "1")).strip() not in ("0", "false"
         pass
 
 # ==================== LICENSE ====================
-def get_hwid():
-    try:
-        if sys.platform == "win32":
-            cmd = 'wmic csproduct get uuid'
-            return hashlib.md5(subprocess.check_output(cmd).decode().split('\n')[1].strip().encode()).hexdigest().upper()
-        return "UNKNOWN-ID"
-    except: return "DEV-MODE-ID"
-
-LICENSE_API_URL = os.environ.get("KOMMZ_LICENSE_API_URL", "https://kommzvoice.onrender.com").strip().rstrip("/")
-LICENSE_API_CONNECT_TIMEOUT = float(os.environ.get("KOMMZ_LICENSE_CONNECT_TIMEOUT", "8"))
-LICENSE_API_READ_TIMEOUT = float(os.environ.get("KOMMZ_LICENSE_READ_TIMEOUT", "45"))
-LICENSE_API_RETRIES = int(os.environ.get("KOMMZ_LICENSE_RETRIES", "2"))
-# Timeouts/retries dédiés à l'action utilisateur "Activer" (doit répondre vite).
-LICENSE_ACTIVATE_CONNECT_TIMEOUT = float(os.environ.get("KOMMZ_LICENSE_ACTIVATE_CONNECT_TIMEOUT", "15"))
-LICENSE_ACTIVATE_READ_TIMEOUT = float(os.environ.get("KOMMZ_LICENSE_ACTIVATE_READ_TIMEOUT", "45"))
-LICENSE_ACTIVATE_RETRIES = int(os.environ.get("KOMMZ_LICENSE_ACTIVATE_RETRIES", "1"))
-EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
-
-def normalize_email(email):
-    return (email or "").strip().lower()
-
-def is_valid_email(email):
-    return bool(EMAIL_RE.match(normalize_email(email)))
-
-class LicenseManager:
-    def __init__(self, hwid, voice_mode=False):
-        self.hwid = hwid
-        self.voice_mode = voice_mode
-        self.is_activated = False
-        self.expiration_str = "N/A"
-        self.license_key = ""
-        self.last_error = ""
-
-    def activate_remote(self, key, email):
-        key = (key or "").strip().upper()
-        email = normalize_email(email)
-        if not key:
-            self.last_error = "Clé manquante"
-            self.is_activated = False
-            return False, self.last_error
-        if not is_valid_email(email):
-            self.last_error = "Email invalide"
-            self.is_activated = False
-            return False, self.last_error
-
-        endpoint = "/license/voice/activate-desktop" if self.voice_mode else "/license/desktop/activate"
-        if key.startswith("TRIAL-"):
-            endpoint = "/license/trial/activate-desktop"
-        last_exc = None
-        for attempt in range(1, max(1, LICENSE_ACTIVATE_RETRIES) + 1):
-            try:
-                if attempt > 1:
-                    try:
-                        requests.get(f"{LICENSE_API_URL}/health", timeout=(LICENSE_ACTIVATE_CONNECT_TIMEOUT, 4))
-                    except Exception:
-                        pass
-                r = requests.post(
-                    f"{LICENSE_API_URL}{endpoint}",
-                    json={"license_key": key, "email": email, "hwid": self.hwid},
-                    timeout=(LICENSE_ACTIVATE_CONNECT_TIMEOUT, LICENSE_ACTIVATE_READ_TIMEOUT),
-                )
-                payload = {}
-                try:
-                    payload = r.json()
-                except Exception:
-                    payload = {}
-                if r.ok and payload.get("ok"):
-                    self.is_activated = True
-                    self.license_key = payload.get("license_key", key)
-                    self.expiration_str = payload.get("expiration", "N/A")
-                    self.last_error = ""
-                    return True, self.expiration_str
-                self.is_activated = False
-                self.last_error = payload.get("error", f"Activation refusée ({r.status_code})")
-                return False, self.last_error
-            except requests.exceptions.ReadTimeout as e:
-                last_exc = e
-                continue
-            except Exception as e:
-                last_exc = e
-                break
-        self.is_activated = False
-        if isinstance(last_exc, requests.exceptions.ReadTimeout):
-            self.last_error = "Serveur licence lent/injoignable (timeout). Réessayez dans quelques secondes."
-        else:
-            self.last_error = str(last_exc) if last_exc else "Serveur indisponible"
-        return False, self.last_error
-
-
-LICENSE_MGR = LicenseManager(get_hwid(), voice_mode=False)
-VOICE_LICENSE_MGR = LicenseManager(LICENSE_MGR.hwid, voice_mode=True)
-if COMMUNITY_EDITION:
-    LICENSE_MGR.is_activated = True
-    LICENSE_MGR.expiration_str = "COMMUNITY"
-    VOICE_LICENSE_MGR.is_activated = True
-    VOICE_LICENSE_MGR.expiration_str = "COMMUNITY"
-
-def _has_local_voice_trial_entitlement():
-    try:
-        voice_key = (AUDIO_CONFIG.get("voice_license_key") or "").strip().upper()
-        desktop_key = (AUDIO_CONFIG.get("license_key") or "").strip().upper()
-        if not (voice_key.startswith("TRIAL-") or desktop_key.startswith("TRIAL-")):
-            return False
-        used = int(AUDIO_CONFIG.get("trial_voice_seconds_used_local", 0) or 0)
-        return used < 1800
-    except Exception:
-        return False
-
-def has_voice_license():
-    if not CLOUD_FEATURES_ENABLED:
-        return False
-    if COMMUNITY_EDITION:
-        return True
-    if VOICE_LICENSE_MGR.is_activated:
-        return True
-    # Allow the desktop to start from a valid local trial state while the
-    # remote license refresh completes in the background.
-    return _has_local_voice_trial_entitlement()
-
-def refresh_license_states_from_server():
-    if not CLOUD_FEATURES_ENABLED:
-        LICENSE_MGR.is_activated = False
-        LICENSE_MGR.expiration_str = "N/A"
-        VOICE_LICENSE_MGR.is_activated = False
-        VOICE_LICENSE_MGR.expiration_str = "N/A"
-        return
-    if COMMUNITY_EDITION:
-        LICENSE_MGR.is_activated = True
-        LICENSE_MGR.expiration_str = "COMMUNITY"
-        VOICE_LICENSE_MGR.is_activated = True
-        VOICE_LICENSE_MGR.expiration_str = "COMMUNITY"
-        return
-    email = (AUDIO_CONFIG.get("license_email") or "").strip().lower()
-    if email:
-        key = (AUDIO_CONFIG.get("license_key") or "").strip().upper()
-        if key and not key.startswith("TRIAL-"):
-            LICENSE_MGR.activate_remote(key, email)
-        elif key.startswith("TRIAL-"):
-            LICENSE_MGR.is_activated = True
-        else:
-            LICENSE_MGR.is_activated = False
-
-        voice_key = (AUDIO_CONFIG.get("voice_license_key") or "").strip().upper()
-        if voice_key and not voice_key.startswith("TRIAL-"):
-            VOICE_LICENSE_MGR.activate_remote(voice_key, email)
-        elif voice_key.startswith("TRIAL-"):
-            VOICE_LICENSE_MGR.is_activated = True
-        else:
-            VOICE_LICENSE_MGR.is_activated = False
-    else:
-        LICENSE_MGR.is_activated = False
-        VOICE_LICENSE_MGR.is_activated = False
 
 CURRENT_TARGET_LANG = "EN" 
 USER_NATIVE_LANG = "FR"     
@@ -4052,7 +3866,7 @@ _listen_runtime = {
     "ally_voice_skipped": 0,
     "ally_voice_rate_limited": 0,
     "ally_short_merged": 0,
-    "last_event_at": 0.0,
+    "last_event_at": time.time(),  # V5.3 FIX: init à now() — évite idle_age=999999s au démarrage
     "listen_conn_state": "idle",
     "listen_conn_detail": "En attente audio",
     "listen_conn_retry_after": 0.0,
@@ -4224,6 +4038,7 @@ def _build_listen_health_snapshot() -> dict:
         }
 
 
+# À DÉPLACER V5.5 — appelé depuis vtp_core runtime
 def _restart_listen_engine(reason: str = "") -> bool:
     global DG_ENGINE, _listen_watchdog_last_restart_ts
     now = time.time()
@@ -4302,7 +4117,7 @@ def _watchdog_alert(reason: str = ""):
 def listen_watchdog_loop():
     while True:
         try:
-            time.sleep(1.5)
+            _PERF_STOP_EVENT.wait(1.5)
             _listen_runtime["watchdog_last_tick_at"] = time.time()
             if not bool(AUDIO_CONFIG.get("is_listening", True)):
                 continue
@@ -4347,7 +4162,7 @@ def listen_watchdog_loop():
                 except Exception:
                     idle_threshold_s = 75
                 idle_threshold_s = max(25, min(180, idle_threshold_s))
-                if idle_age > idle_threshold_s and (not _ptt_rec) and (not _hybrid_running) and (not _is_speaking):
+                if idle_age > idle_threshold_s and stream_age > (stale_threshold_s * 2) and (not _ptt_rec) and (not _hybrid_running) and (not _is_speaking):
                     # V5.2: Auto-pause au lieu de restart si active
                     auto_pause_enabled = bool(AUDIO_CONFIG.get("auto_pause_enabled", True))
                     auto_pause_threshold = int(AUDIO_CONFIG.get("auto_pause_silence_threshold_s", 120) or 120)
@@ -4394,7 +4209,7 @@ def listen_watchdog_loop():
                         except Exception:
                             pass
         except Exception:
-            time.sleep(1.0)
+            _PERF_STOP_EVENT.wait(1.0)
 
 # ==================== API ====================
 app = Flask('vtp_core', static_folder=str(WEB_DIR), template_folder=str(WEB_DIR))
@@ -4435,24 +4250,227 @@ _mobile_connected = False
 
 from fastapi import UploadFile, File
 
-# --- ROUTE POUR GERER LA LISTE DE CENSURE ---
 
-@app.route("/privacy/list", methods=["GET"])
-def get_privacy_list():
-    """Envoie la liste des mots interdits à l'interface"""
-    return jsonify({"words": AUDIO_CONFIG.get("privacy_words", [])})
+# ============================================================
+# V5.3 — Buffer size auto-tuning
+# ============================================================
+_buffer_autotune_state = {
+    "last_buffer_size": 1024,
+    "last_latency_ms": None,
+    "last_tuned_at": 0.0,
+}
 
-@app.route("/privacy/update", methods=["POST"])
-def update_privacy_list():
-    """Reçoit la nouvelle liste modifiée par l'utilisateur"""
-    data = request.json
-    words = data.get("words", [])
-    
-    # Mise à jour et sauvegarde
-    AUDIO_CONFIG["privacy_words"] = words
-    save_config()
-    
-    return jsonify({"ok": True, "count": len(words)})
+def _measure_audio_latency_ms(buffer_size: int, sample_rate: int = 48000) -> float:
+    """Estime la latence introduite par un buffer donné."""
+    return round((buffer_size / max(sample_rate, 1)) * 1000.0, 2)
+
+def _autotune_buffer_size(target_latency_ms: float = 20.0) -> dict:
+    """
+    V5.3: Choisit automatiquement la taille de buffer optimale selon la cible de latence
+    et la charge CPU actuelle.
+    """
+    import psutil
+    cpu = psutil.cpu_percent(interval=0.2)
+    sr = int(AUDIO_CONFIG.get("mic_sample_rate", 48000) or 48000)
+
+    # Candidate buffer sizes (power of 2)
+    candidates = [64, 128, 256, 512, 1024, 2048]
+
+    # Under high CPU load, prefer larger buffers (more stable)
+    if cpu > 75:
+        candidates = [512, 1024, 2048]
+    elif cpu > 50:
+        candidates = [256, 512, 1024]
+
+    best_size = 1024
+    best_latency = None
+    for size in candidates:
+        lat = _measure_audio_latency_ms(size, sr)
+        if lat <= target_latency_ms:
+            best_size = size
+            best_latency = lat
+        else:
+            break  # sorted ascending, stop when we exceed target
+
+    # If no candidate meets target, pick smallest
+    if best_latency is None:
+        best_size = candidates[0]
+        best_latency = _measure_audio_latency_ms(best_size, sr)
+
+    # Apply
+    AUDIO_CONFIG["audio_blocksize"] = best_size
+    _buffer_autotune_state["last_buffer_size"] = best_size
+    _buffer_autotune_state["last_latency_ms"] = best_latency
+    _buffer_autotune_state["last_tuned_at"] = time.time()
+
+    stealth_print(f"⚡ Buffer auto-tuné: {best_size} frames · {best_latency}ms · CPU={cpu:.0f}%")
+    return {
+        "ok": True,
+        "buffer_size": best_size,
+        "latency_ms": best_latency,
+        "sample_rate": sr,
+        "cpu_percent": round(cpu, 1),
+        "target_latency_ms": target_latency_ms,
+    }
+
+
+# ============================================================
+# V5.3 — Monitoring mix: micro + son jeu pour streamers
+# ============================================================
+_monitoring_mix_state = {
+    "enabled": False,
+    "mic_gain": 0.8,
+    "game_gain": 0.5,
+    "stream": None,
+}
+
+
+
+
+# ============================================================
+# V5.3 — Smart Alerts
+# ============================================================
+_smart_alerts_state = {
+    "alerts": [],
+    "last_check_at": 0.0,
+    "check_interval_s": 5.0,
+}
+
+def _check_smart_alerts() -> list:
+    """
+    V5.3: Vérifie les métriques et génère des alertes intelligentes.
+    Appelé depuis /status pour ne pas surcharger le polling.
+    """
+    now = time.time()
+    st = _smart_alerts_state
+    if (now - st["last_check_at"]) < st["check_interval_s"]:
+        return st["alerts"]
+
+    st["last_check_at"] = now
+    alerts = []
+
+    try:
+        # 1. Saturation micro (RMS trop élevé)
+        rms = float(_listen_focus_auto_state.get("noise_rms_ema", 0.0) or 0.0)
+        if rms > 0.25:
+            alerts.append({
+                "level": "warn",
+                "code": "mic_saturation",
+                "message": f"⚠️ Ton micro sature (RMS={rms:.3f}) — baisse le gain ou éloigne-toi du micro",
+            })
+
+        # 2. Bruit de fond anormal (RMS élevé sans voix)
+        speech_ratio = float(AUDIO_CONFIG.get("_vad_v2_speech_ratio", 0.0) or 0.0)
+        if rms > 0.04 and speech_ratio < 0.1:
+            alerts.append({
+                "level": "warn",
+                "code": "high_noise",
+                "message": f"⚠️ Bruit de fond anormal (RMS={rms:.3f}) — vérifie ton environnement audio",
+            })
+
+        # 3. Latence STT élevée
+        stt_p95 = LATENCY_RUNTIME_STATE.get("stt_p95")
+        if isinstance(stt_p95, (int, float)) and stt_p95 > 3000:
+            alerts.append({
+                "level": "warn",
+                "code": "high_stt_latency",
+                "message": f"⚠️ Latence STT élevée (p95={stt_p95:.0f}ms) — vérifie ta connexion internet",
+            })
+
+        # 4. Trop de redémarrages watchdog
+        from_runtime = AUDIO_CONFIG.get("_listen_runtime", {})
+        restarts = int(from_runtime.get("watchdog_restarts", 0) or 0)
+        if restarts > 5:
+            alerts.append({
+                "level": "err",
+                "code": "watchdog_restarts",
+                "message": f"🔴 {restarts} redémarrages watchdog — instabilité détectée",
+            })
+
+        # 5. Santé écoute dégradée
+        health = str(AUDIO_CONFIG.get("_listen_health_level", "") or "")
+        if health == "err":
+            summary = str(AUDIO_CONFIG.get("_listen_health_summary", "") or "")
+            alerts.append({
+                "level": "err",
+                "code": "listen_health_err",
+                "message": f"🔴 Santé écoute dégradée: {summary or 'vérifier les logs'}",
+            })
+
+        # 6. Quota cloud atteint
+        if AUDIO_CONFIG.get("voice_cloud_limit_reached", False):
+            alerts.append({
+                "level": "warn",
+                "code": "cloud_quota",
+                "message": "⏱️ Quota cloud TTS atteint — bascule sur moteur local",
+            })
+
+        # 7. SNR trop faible
+        snr = float(_listen_focus_auto_state.get("crest_ema", 0.0) or 0.0)
+        if 0 < snr < 2.0:
+            alerts.append({
+                "level": "warn",
+                "code": "low_snr",
+                "message": f"⚠️ SNR très faible (crest={snr:.2f}) — voix difficile à isoler du bruit",
+            })
+
+    except Exception as e:
+        stealth_print(f"⚠️ Smart alerts check error: {e}")
+
+    st["alerts"] = alerts
+    return alerts
+
+
+@app.route("/hud/config", methods=["POST"])
+def route_hud_config():
+    """V5.3: Reçoit opacité + visibilité des lignes depuis index.html et les sauvegarde."""
+    try:
+        data = request.get_json(silent=True) or {}
+        # Opacité — fond seulement, texte 100% opaque
+        if "opacity" in data:
+            pct = int(data["opacity"])
+            AUDIO_CONFIG["hud_opacity"] = pct
+            if _HUD_QT_WINDOW is not None:
+                try:
+                    _HUD_QT_WINDOW.set_opacity(pct)
+                except Exception as e:
+                    stealth_print(f"⚠️ HUD opacity update error: {e}")
+        # Visibilité des lignes
+        row_keys = ["hudShowPreset","hudShowRMS","hudShowSNR","hudShowFocus",
+                    "hudShowUptime","hudShowMic","hudShowListen","hudShowGame"]
+        for k in row_keys:
+            if k in data:
+                AUDIO_CONFIG[k] = bool(data[k])
+        if _HUD_QT_WINDOW is not None:
+            try:
+                _HUD_QT_WINDOW.apply_row_visibility()
+            except Exception as e:
+                stealth_print(f"⚠️ HUD row visibility update error: {e}")
+        save_settings()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/hud/move", methods=["POST"])
+def route_hud_move():
+    """V5.3: Déplace la fenêtre HUD Qt à la position demandée."""
+    try:
+        data = request.get_json(silent=True) or {}
+        x = int(data.get("x", 40))
+        y = int(data.get("y", 40))
+        AUDIO_CONFIG["mini_overlay_x"] = x
+        AUDIO_CONFIG["mini_overlay_y"] = y
+        save_settings()
+        if _HUD_QT_WINDOW is not None:
+            try:
+                _HUD_QT_WINDOW.move(x, y)
+            except Exception as e:
+                stealth_print(f"⚠️ HUD move error: {e}")
+        return jsonify({"ok": True, "x": x, "y": y})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route('/config/reset', methods=['POST'])
 def api_factory_reset():
@@ -4464,8 +4482,8 @@ def api_factory_reset():
     
     # 2. On ré-applique les raccourcis par défaut
     keyboard.unhook_all_hotkeys()
-    keyboard.add_hotkey('f2', toggle_tts_action)
-    keyboard.add_hotkey('f3', toggle_monitoring_action)
+    if AUDIO_CONFIG.get('hotkey_f2_enabled', True): keyboard.add_hotkey('f2', toggle_tts_action)
+    if AUDIO_CONFIG.get('hotkey_f3_enabled', True): keyboard.add_hotkey('f3', toggle_monitoring_action)
     keyboard.add_hotkey('f4', toggle_bypass_action)
     keyboard.add_hotkey('f8', panic_reset)
     
@@ -4477,17 +4495,38 @@ def save_audio_api():
     global AUDIO_CONFIG
     
     try:
-        # On ne convertit que si la clé existe et n'est pas vide
-        if data.get('game_output_index') is not None and str(data['game_output_index']).isdigit():
-            AUDIO_CONFIG["game_output_device_key"] = str(data.get('game_output_key') or "")
+        # 🔥 FIX PERSISTENCE : on persiste l'indice NUMÉRIQUE reçu du JS
+        # (sinon le polling /status le remet toujours à la valeur précédente →
+        #  le <select> est écrasé 2-3s après la sélection).
+        out_idx = data.get('game_output_index')
+        if out_idx is not None and str(out_idx).strip().isdigit():
+            out_idx_int = int(str(out_idx).strip())
+            AUDIO_CONFIG["game_output_device"] = out_idx_int
+            # Résoudre la clé canonique depuis l'indice si le JS n'a pas envoyé de clé
+            out_key = str(data.get('game_output_key') or "").strip()
+            if not out_key:
+                out_rt = _device_runtime_payload(out_idx_int) or {}
+                out_name = out_rt.get("name", "")
+                out_hostapi = out_rt.get("hostapi", "")
+                out_key = _normalize_device_signature(out_name, out_hostapi)
+            AUDIO_CONFIG["game_output_device_key"] = out_key
             AUDIO_CONFIG["game_output_device_runtime"] = _resolve_device_signature(
-                AUDIO_CONFIG["game_output_device_key"], as_output=True
+                out_key, as_output=True
             ) or {}
 
-        if data.get('game_input_index') is not None and str(data['game_input_index']).isdigit():
-            AUDIO_CONFIG["game_input_device_key"] = str(data.get('game_input_key') or "")
+        in_idx = data.get('game_input_index')
+        if in_idx is not None and str(in_idx).strip().isdigit():
+            in_idx_int = int(str(in_idx).strip())
+            AUDIO_CONFIG["game_input_device"] = in_idx_int
+            in_key = str(data.get('game_input_key') or "").strip()
+            if not in_key:
+                in_rt = _device_runtime_payload(in_idx_int) or {}
+                in_name = in_rt.get("name", "")
+                in_hostapi = in_rt.get("hostapi", "")
+                in_key = _normalize_device_signature(in_name, in_hostapi)
+            AUDIO_CONFIG["game_input_device_key"] = in_key
             AUDIO_CONFIG["game_input_device_runtime"] = _resolve_device_signature(
-                AUDIO_CONFIG["game_input_device_key"], as_output=False
+                in_key, as_output=False
             ) or {}
 
         if data.get('tts_volume') is not None:
@@ -4497,16 +4536,39 @@ def save_audio_api():
             except Exception:
                 pass
         
+        # mini overlay desktop toggle (V5.3)
+        if 'mini_overlay_enabled' in data:
+            raw_overlay_enabled = data.get('mini_overlay_enabled')
+            stealth_print(
+                f"🔍 HUD toggle payload raw={raw_overlay_enabled!r} "
+                f"type={type(raw_overlay_enabled).__name__}"
+            )
+            AUDIO_CONFIG['mini_overlay_enabled'] = bool(raw_overlay_enabled)
+            stealth_print(
+                f"🔍 HUD toggle coerced={AUDIO_CONFIG['mini_overlay_enabled']} "
+                f"timer_started={_HUD_CMD_TIMER is not None} "
+                f"window_exists={_HUD_QT_WINDOW is not None}"
+            )
+            if AUDIO_CONFIG['mini_overlay_enabled']:
+                _hud_enqueue_command("show")
+            else:
+                _hud_enqueue_command("hide")
+            stealth_print(f"🖥️ Mini overlay: {'activé' if AUDIO_CONFIG['mini_overlay_enabled'] else 'désactivé'}")
+
         # 💾 Sauvegarde dans le fichier settings.json
-        save_settings()
+        saved = save_settings()
         
         stealth_print(
-            f"✅ RÉGLAGES AUDIO VALIDÉS : "
-            f"Sortie={AUDIO_CONFIG.get('game_output_device_key')}, "
-            f"Entrée={AUDIO_CONFIG.get('game_input_device_key')}, "
+            f"{'✅' if saved else '⚠️'} "
+            f"RÉGLAGES AUDIO {'VALIDÉS' if saved else 'ÉCHEC SAUVEGARDE'} : "
+            f"Sortie={AUDIO_CONFIG['game_output_device_key']}, "
+            f"Entrée={AUDIO_CONFIG['game_input_device_key']}, "
             f"Volume TTS={int(float(AUDIO_CONFIG.get('tts_volume', 1.0) or 1.0) * 100)}%"
         )
-        return jsonify({"ok": True})
+        return jsonify({
+            "ok": saved,
+            "config_file": str(CONFIG_FILE),
+        }), (200 if saved else 500)
     except Exception as e:
         stealth_print(f"❌ Erreur lors du mapping audio : {e}")
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -4586,9 +4648,20 @@ def status_core():
     st = {k: v for k, v in AUDIO_CONFIG.items()}
     desktop_key = (AUDIO_CONFIG.get("license_key") or "").strip().upper()
     voice_key = (AUDIO_CONFIG.get("voice_license_key") or "").strip().upper()
-    trial_desktop = False if (COMMUNITY_EDITION or (not CLOUD_FEATURES_ENABLED)) else desktop_key.startswith("TRIAL-")
-    trial_voice = False if (COMMUNITY_EDITION or (not CLOUD_FEATURES_ENABLED)) else voice_key.startswith("TRIAL-")
-    trial_mode = False if (COMMUNITY_EDITION or (not CLOUD_FEATURES_ENABLED)) else (trial_desktop or trial_voice)
+    # BUG 4 fix — vérifier le timestamp AVANT de considérer un trial actif
+    def _trial_not_expired(key):
+        """True seulement si clé TRIAL- avec timestamp < 24h."""
+        if not key.startswith("TRIAL-"):
+            return False
+        try:
+            import time as _t
+            ts = int(key.split("-")[1])
+            return (_t.time() - ts) / 3600 < 24
+        except Exception:
+            return False
+    trial_desktop = False if (COMMUNITY_EDITION or (not CLOUD_FEATURES_ENABLED)) else _trial_not_expired(desktop_key)
+    trial_voice   = False if (COMMUNITY_EDITION or (not CLOUD_FEATURES_ENABLED)) else _trial_not_expired(voice_key)
+    trial_mode    = False if (COMMUNITY_EDITION or (not CLOUD_FEATURES_ENABLED)) else (trial_desktop or trial_voice)
     trial_expiration = ""
     if (not COMMUNITY_EDITION) and CLOUD_FEATURES_ENABLED:
         if trial_desktop and LICENSE_MGR.expiration_str and LICENSE_MGR.expiration_str != "N/A":
@@ -4617,7 +4690,7 @@ def status_core():
         "local_ip": lan_ip,
         "local_ips": lan_candidates,
         "remote_url": f"http://{lan_ip}:{VTP_CORE_PORT}/remote",
-        "licensed": True if COMMUNITY_EDITION else LICENSE_MGR.is_activated,
+        "licensed": True if COMMUNITY_EDITION else LICENSE_MGR.is_active,
         "expiration": "COMMUNITY" if COMMUNITY_EDITION else LICENSE_MGR.expiration_str,
         "hwid": LICENSE_MGR.hwid,
         "edition_profile": EDITION_PROFILE,
@@ -4630,6 +4703,8 @@ def status_core():
         "trial_desktop": trial_desktop,
         "trial_voice": trial_voice,
         "trial_expiration": trial_expiration,
+        "desktop_activated": True if COMMUNITY_EDITION else (LICENSE_MGR.is_activated or trial_desktop),
+        "voice_activated": True if COMMUNITY_EDITION else (VOICE_LICENSE_MGR.is_activated or trial_voice),
         "trial_voice_seconds_quota": trial_quota_seconds,
         "trial_voice_seconds_used_local": trial_used_local,
         "trial_voice_seconds_remaining_local": trial_remaining_local,
@@ -4681,7 +4756,33 @@ def status_core():
         "is_listening": AUDIO_CONFIG.get("is_listening", True),
         "user_overlay_color": str(AUDIO_CONFIG.get("user_overlay_color", "#00FFFF") or "#00FFFF"),
         "ally_overlay_color": str(AUDIO_CONFIG.get("ally_overlay_color", "#FFFF00") or "#FFFF00"),
-        "turbo_latency_active": AUDIO_CONFIG.get("turbo_latency_active", False)
+        "turbo_latency_active": AUDIO_CONFIG.get("turbo_latency_active", False),
+        # V5.3: STT/TTS latency percentiles
+        "stt_p50": LATENCY_RUNTIME_STATE.get("stt_p50"),
+        "stt_p95": LATENCY_RUNTIME_STATE.get("stt_p95"),
+        "stt_p99": LATENCY_RUNTIME_STATE.get("stt_p99"),
+        "tts_p50": LATENCY_RUNTIME_STATE.get("tts_p50"),
+        "tts_p95": LATENCY_RUNTIME_STATE.get("tts_p95"),
+        "tts_p99": LATENCY_RUNTIME_STATE.get("tts_p99"),
+        "total_p50": LATENCY_RUNTIME_STATE.get("total_p50"),
+        "total_p95": LATENCY_RUNTIME_STATE.get("total_p95"),
+        "total_p99": LATENCY_RUNTIME_STATE.get("total_p99"),
+        "latency_sample_count": LATENCY_RUNTIME_STATE.get("sample_count", 0),
+        # V5.3: VAD V2
+        **get_vad_v2_status(),
+        # V5.3: Smart alerts (cached, 5s interval)
+        "smart_alerts": _check_smart_alerts(),
+        "smart_alerts_count": len(_smart_alerts_state.get("alerts", [])),
+        # V5.3: Monitoring mix
+        "monitoring_mix_enabled": bool(AUDIO_CONFIG.get("monitoring_mix_enabled", False)),
+        "monitoring_mix_mic_gain":  float(AUDIO_CONFIG.get("monitoring_mix_mic_gain", 0.8)),
+        "monitoring_mix_game_gain": float(AUDIO_CONFIG.get("monitoring_mix_game_gain", 0.5)),
+        # V5.3: Buffer autotune
+        "audio_blocksize": int(AUDIO_CONFIG.get("audio_blocksize", 1024) or 1024),
+        "buffer_last_latency_ms": _buffer_autotune_state.get("last_latency_ms"),
+        "mini_overlay_enabled": bool(AUDIO_CONFIG.get("mini_overlay_enabled", False)),
+        # FIX #2: StreamBuffer drop counter
+        "stream_buffer_total_drops": int(_STREAM_BUFFER_TOTAL_DROPS),
     })
 
     # 4. FIX AFFICHAGE LANGUE (Codes drapeaux)
@@ -4748,10 +4849,8 @@ def status_core():
         "hybrid_fr_ref_exists": bool(hybrid_cfg.get("ref_exists")),
         "recording": _ptt_rec, 
         "ptt_key": AUDIO_CONFIG.get("ptt_hotkey", "ctrl+shift"),
-        "game_output_device_key": str(AUDIO_CONFIG.get("game_output_device_key") or ""),
-        "game_input_device_key": str(AUDIO_CONFIG.get("game_input_device_key") or ""),
-        "game_output_index": safe_int((AUDIO_CONFIG.get("game_output_device_runtime") or {}).get("index")),
-        "game_input_index": safe_int((AUDIO_CONFIG.get("game_input_device_runtime") or {}).get("index")),
+        "game_output_index": safe_int(AUDIO_CONFIG.get("game_output_device")),
+        "game_input_index": safe_int(AUDIO_CONFIG.get("game_input_device")),
         "tts_volume": float(AUDIO_CONFIG.get("tts_volume", 1.0) or 1.0),
         "edge_voice": AUDIO_CONFIG.get("edge_voice", ""),
         "current_voice_id": AUDIO_CONFIG.get("edge_voice", ""),
@@ -4813,76 +4912,6 @@ def status_core():
     return jsonify(_repair_payload_strings(st))
 
 
-@app.route("/kommz/xtts/warmup", methods=["POST"])
-def kommz_xtts_warmup():
-    """Warmup on-demand du serveur XTTS (Modal) avec cooldown anti-spam."""
-    try:
-        payload = request.get_json(silent=True) or {}
-        force = bool(payload.get("force", False)) if isinstance(payload, dict) else False
-
-        retry_after = _get_xtts_warmup_retry_after_seconds()
-        if (retry_after > 0) and not force:
-            return jsonify({"ok": False, "retry_after": retry_after, "cooldown": KOMMZ_XTTS_WARMUP_COOLDOWN}), 429
-
-        prewarm_kommz_xtts(force=force)
-        return jsonify({
-            "ok": True,
-            "retry_after": _get_xtts_warmup_retry_after_seconds(),
-            "cooldown": KOMMZ_XTTS_WARMUP_COOLDOWN,
-        })
-    except Exception as e:
-        logger.exception("kommz_xtts_warmup failed")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/cloud/diag/retest", methods=["POST"])
-def cloud_diag_retest():
-    """Force un re-test immédiat des endpoints cloud (V5)."""
-    try:
-        payload = get_cloud_endpoints_diag(force=True, cache_ttl=0)
-        return jsonify({"ok": True, "diag": payload})
-    except Exception as e:
-        logger.exception("cloud_diag_retest failed")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/update/open-download", methods=["POST"])
-def open_update_download():
-    url = (UPDATE_STATE.get("download_url") or "").strip()
-    if not url:
-        return jsonify({"ok": False, "error": "URL de téléchargement indisponible"}), 400
-    try:
-        webbrowser.open(url)
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/update/changelog", methods=["GET"])
-def update_changelog():
-    url = (request.args.get("url") or UPDATE_STATE.get("changelog_url") or "").strip()
-    if not url:
-        return jsonify({"ok": False, "error": "URL du changelog indisponible"}), 400
-    try:
-        parts = urlsplit(url)
-        if parts.scheme not in {"http", "https"}:
-            return jsonify({"ok": False, "error": "URL du changelog invalide"}), 400
-        r = requests.get(
-            url,
-            timeout=(8, 20),
-            headers={
-                "User-Agent": f"KommzGamer/{APP_BUILD_VERSION}",
-                "Accept": "text/plain, text/markdown;q=0.9, text/html;q=0.5, */*;q=0.1",
-            },
-            allow_redirects=True,
-        )
-        r.raise_for_status()
-        txt = r.text or ""
-        if not txt.strip():
-            return jsonify({"ok": False, "error": "Changelog vide"}), 502
-        return Response(txt[:40000], content_type="text/plain; charset=utf-8")
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
 
 
 def _download_file(url: str, out_path: str) -> None:
@@ -5123,17 +5152,6 @@ def _install_update_background():
         UPDATE_STATE["install_status"] = f"Échec mise à jour : {e}"
         UPDATE_STATE["error"] = str(e)
 
-
-@app.route("/update/install", methods=["POST"])
-def install_update():
-    if UPDATE_STATE.get("installing"):
-        return jsonify({"ok": False, "error": "Installation déjà en cours"}), 409
-    url = (UPDATE_STATE.get("download_url") or "").strip()
-    if not url:
-        return jsonify({"ok": False, "error": "Aucune URL de mise à jour disponible"}), 400
-    threading.Thread(target=_install_update_background, daemon=True).start()
-    return jsonify({"ok": True, "message": "Mise à jour démarrée"})
-
 import keyboard # Assure-toi que ce module est importé
 
 @app.route('/hotkey/start_capture', methods=['POST'])
@@ -5157,13 +5175,13 @@ def start_hotkey_capture():
             # MAIS on ne lie JAMAIS la nouvelle touche 'new_key' à 'toggle_bypass_action'
             try:
                 keyboard.unhook_all_hotkeys()
-                keyboard.add_hotkey('f2', toggle_tts_action)
+                if AUDIO_CONFIG.get('hotkey_f2_enabled', True): keyboard.add_hotkey('f2', toggle_tts_action)
                 
                 # ON REBRANCHE F4 SUR LE BYPASS (Uniquement F4)
                 keyboard.add_hotkey('f4', toggle_bypass_action)
                 
                 # ON REBRANCHE LES AUTRES TOUCHES SYSTÈME
-                keyboard.add_hotkey('f3', toggle_monitoring_action)
+                if AUDIO_CONFIG.get('hotkey_f3_enabled', True): keyboard.add_hotkey('f3', toggle_monitoring_action)
                 keyboard.add_hotkey('f8', panic_reset)
                 
                 stealth_print(f"✅ PTT enregistré : {new_key} | F4 reste configuré sur BYPASS")
@@ -5171,12 +5189,10 @@ def start_hotkey_capture():
                 stealth_print(f"❌ Erreur ré-assignation hotkeys : {e}")
 
     # Lancement dans un thread séparé pour ne pas bloquer l'interface
-    import threading
     threading.Thread(target=capture_logic, daemon=True).start()
     return jsonify({"ok": True})
 
     # --- CES LIGNES DOIVENT ÊTRE DANS LA FONCTION MAÎTRESSE ---
-    import threading
     threading.Thread(target=capture_logic, daemon=True).start()
     
     # C'est ce return qui posait problème : il doit être décalé (indented)
@@ -5357,6 +5373,66 @@ def remote_qr_svg():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
+# --- SOUS-TITRES SSE + VTT ---
+
+@app.route('/subs/stream')
+def subs_sse_stream():
+    import json as _json
+    def generate():
+        import time as _time
+        last_key = ""
+        while True:
+            try:
+                _time.sleep(0.35)
+                recent = [x for x in subs_buffer
+                          if (_time.time() - float(x.get("timestamp", 0) or 0)) < 10.0]
+                if not recent:
+                    yield "data: {}\n\n"
+                    continue
+                last = recent[-1]
+                lang = str(last.get("lang", "") or "")
+                is_ally = "ALLI\u00c9" in lang or "ALLY" in lang
+                role = "SYS" if "SYS" in lang else ("ALLY" if is_ally else "USER")
+                txt = str(last.get("text", "") or "").strip()
+                key = role + "|" + txt
+                if key != last_key and txt:
+                    last_key = key
+                    payload = _json.dumps({
+                        "role": role,
+                        "text": txt,
+                        "user_color": AUDIO_CONFIG.get("user_overlay_color", "#00FFFF"),
+                        "ally_color": AUDIO_CONFIG.get("ally_overlay_color", "#FFFF00"),
+                    })
+                    yield "data: " + payload + "\n\n"
+                else:
+                    yield ": keep-alive\n\n"
+            except GeneratorExit:
+                break
+            except Exception:
+                yield ": error\n\n"
+    from flask import Response as _Resp
+    resp = _Resp(generate(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
+@app.route('/subs/live.vtt')
+def subs_live_vtt():
+    import time as _time
+    recent = [x for x in subs_buffer
+              if (_time.time() - float(x.get("timestamp", 0) or 0)) < 10.0]
+    if not recent:
+        return "WEBVTT\n\n", 200, {"Content-Type": "text/vtt; charset=utf-8"}
+    last = recent[-1]
+    lang = str(last.get("lang", "") or "")
+    is_ally = "ALLI\u00c9" in lang or "ALLY" in lang
+    role = "SYS" if "SYS" in lang else ("ALLY" if is_ally else "USER")
+    txt = str(last.get("text", "") or "").strip()
+    vtt = "WEBVTT\n\n1\n00:00:00.000 --> 00:00:06.000\n<v " + role + ">" + txt + "\n"
+    return vtt, 200, {"Content-Type": "text/vtt; charset=utf-8"}
+
 @app.route('/')
 def index():
     resp = send_from_directory(WEB_DIR, "index.html")
@@ -5376,807 +5452,6 @@ def favicon():
 @app.route('/<path:path>')
 def serve_static(path): return send_from_directory(WEB_DIR, path)
 
-# ROUTES MOBILE
-@app.route('/api/set_gender')
-def set_gender():
-    gender = request.args.get('gender')
-    app_state["gender"] = gender
-    if CURRENT_TARGET_LANG in EDGE_VOICE_MAP:
-        AUDIO_CONFIG["edge_voice"] = EDGE_VOICE_MAP[CURRENT_TARGET_LANG].get(gender[0], "")
-        app_state["windows_voice_name"] = AUDIO_CONFIG["edge_voice"]
-    return jsonify({"status": "ok", "gender": gender})
-
-@app.route('/api/status')
-def get_status_mobile():
-    app_state["premium_unlocked"] = False
-    app_state["target_lang"] = CURRENT_TARGET_LANG 
-    app_state["edge_voice"] = AUDIO_CONFIG.get("edge_voice", "")
-    return jsonify(app_state)
-
-@app.route('/api/toggle')
-def toggle():
-    app_state["is_active"] = not app_state["is_active"]
-    return jsonify(app_state)
-
-@app.route('/api/panic')
-def panic():
-    app_state["last_text"] = "--- RESET AUDIO ---"
-    global _ptt_rec; 
-    if _ptt_rec: stop_rec()
-    return jsonify({"status": "ok"})
-
-@app.route('/api/set_voice')
-def set_voice():
-    voice_id = request.args.get('id')
-    app_state["current_voice_id"] = voice_id
-    return jsonify(app_state)
-    
-@app.route('/api/set_language')
-def set_language():
-    lang = request.args.get('lang')
-    global CURRENT_TARGET_LANG; CURRENT_TARGET_LANG = lang
-    gender_key = app_state["gender"][0] 
-    if lang in EDGE_VOICE_MAP:
-        AUDIO_CONFIG["edge_voice"] = EDGE_VOICE_MAP[lang][gender_key]
-        app_state["windows_voice_name"] = AUDIO_CONFIG["edge_voice"]
-    return jsonify({"status": "ok", "lang": lang})
-
-@app.route('/api/set_volume')
-def set_volume():
-    AUDIO_CONFIG["tts_volume"] = float(request.args.get('val'))
-    return jsonify({"status": "ok"})
-
-# ==========================================
-# 🎚️ FIX ULTIME SENSIBILITÉ
-# ==========================================
-
-@app.route('/api/set_sensitivity')
-def set_sensitivity():
-    """Route pour le curseur de l'interface"""
-    global AUDIO_CONFIG # On force l'accès à la config globale
-    try:
-        val = float(request.args.get('val'))
-        val = max(0.001, min(0.5, val)) # Sécurité
-        
-        AUDIO_CONFIG["vad_threshold"] = val
-        save_settings() # Sauvegarde immédiate
-        
-        # On affiche la confirmation dans la console
-        stealth_print(f"🎚️ REÇU API : {val}")
-        return jsonify({"status": "ok", "val": val})
-    except Exception as e:
-        stealth_print(f"❌ Erreur API Sensitivity : {e}")
-        return jsonify({"status": "error"})
-
-@app.route("/module/hybrid/sensitivity", methods=["POST"])
-def set_vad_threshold_core():
-    """Route interne de secours"""
-    global AUDIO_CONFIG
-    try:
-        data = request.get_json()
-        val = float(data.get("value", 0.015))
-        val = max(0.001, min(0.5, val))
-        
-        AUDIO_CONFIG["vad_threshold"] = val
-        save_settings()
-        
-        return jsonify({"ok": True, "new_val": val})
-    except: 
-        return jsonify({"ok": False})
-
-@app.route('/api/soundboard')
-def soundboard():
-    text = request.args.get('text')
-    
-    # Sécurité : Si pas de texte, on ne fait rien
-    if not text or len(text.strip()) == 0:
-        return jsonify({"status": "error", "message": "No text provided"})
-
-    # On lance la génération
-    if AUDIO_CONFIG.get("tts_engine") == "KOMMZ_VOICE" and has_voice_license():
-        gen = kommz_tts_generator(text)
-    else:
-        gen = windows_natural_generator(text)
-        
-    threading.Thread(target=resample_and_play, args=(gen,)).start()
-    return jsonify({"status": "ok"})
-    
-@app.route('/api/get_compatible_voices')
-def get_compatible_voices():
-    # On s'assure que la liste est chargée
-    global ALL_EDGE_VOICES
-    if not ALL_EDGE_VOICES:
-        ALL_EDGE_VOICES = get_clean_voices_sync()
-
-    lang_code = request.args.get('lang', 'en').lower()
-    gender = request.args.get('gender', 'Female').lower()
-    
-    filtered = []
-    for v in ALL_EDGE_VOICES:
-        # On compare le début du code (ex: 'fr' dans 'fr-FR')
-        v_lang = v['Locale'].split('-')[0].lower()
-        v_gender = v['Gender'].lower()
-        
-        if v_lang == lang_code and v_gender == gender:
-            # On crée un nom lisible pour le mobile
-            friendly_name = v['ShortName'].split('-')[-1].replace("Neural","").replace("Multilingual","")
-            filtered.append({
-                "name": v['ShortName'], 
-                "friendly": f"{friendly_name} ({v['Locale']})"
-            })
-            
-    return jsonify(filtered)
-
-@app.route('/api/set_windows_voice')
-def set_windows_voice_api():
-    voice_name = request.args.get('name')
-    app_state["windows_voice_name"] = voice_name
-    AUDIO_CONFIG["edge_voice"] = voice_name
-    return jsonify({"status": "ok"})    
-
-@app.route('/license/activate', methods=['POST'])
-def activate_license_route():
-    if COMMUNITY_EDITION:
-        LICENSE_MGR.is_activated = True
-        LICENSE_MGR.expiration_str = "COMMUNITY"
-        return jsonify({"ok": True, "expiration": "COMMUNITY", "community": True})
-    try:
-        data = request.get_json() or {}
-        key = data.get('key', '').strip().upper()
-        email = normalize_email(data.get('email') or AUDIO_CONFIG.get("license_email") or "")
-        
-        stealth_print(f"🔑 Tentative d'activation avec : {key}")
-
-        ok, msg = LICENSE_MGR.activate_remote(key, email)
-        if ok:
-            AUDIO_CONFIG["license_key"] = key
-            AUDIO_CONFIG["license_email"] = email
-            save_settings()
-            
-            stealth_print("✅ Licence validée via serveur.")
-            return jsonify({"ok": True, "expiration": LICENSE_MGR.expiration_str})
-        
-        stealth_print(f"❌ Clé refusée par le serveur: {msg}")
-        return jsonify({"ok": False, "error": msg}), 403
-             
-    except Exception as e:
-        stealth_print(f"❌ Erreur lors de l'activation : {e}")
-        return jsonify({"ok": False})
-
-@app.route('/license/voice/activate', methods=['POST'])
-def activate_voice_license_route():
-    if COMMUNITY_EDITION:
-        VOICE_LICENSE_MGR.is_activated = True
-        VOICE_LICENSE_MGR.expiration_str = "COMMUNITY"
-        return jsonify({"ok": True, "expiration": "COMMUNITY", "community": True})
-    try:
-        data = request.get_json() or {}
-        key = str(data.get('key', '')).strip().upper()
-        email = normalize_email(data.get('email') or AUDIO_CONFIG.get("license_email") or "")
-        ok, msg = VOICE_LICENSE_MGR.activate_remote(key, email)
-        if ok:
-            AUDIO_CONFIG["voice_license_key"] = key
-            AUDIO_CONFIG["license_email"] = email
-            save_settings()
-            stealth_print("Voice license activee via serveur.")
-            return jsonify({"ok": True, "expiration": VOICE_LICENSE_MGR.expiration_str})
-        return jsonify({"ok": False, "error": msg}), 403
-    except Exception as e:
-        stealth_print(f"Erreur activation Voice: {e}")
-        return jsonify({"ok": False}), 500
-
-
-@app.route('/license/trial/activate', methods=['POST'])
-def activate_trial_license_route():
-    """Active un essai gratuit desktop 24h (licence desktop + voice)."""
-    data = request.get_json() or {}
-    # Le client envoie edition:'community' → bypass sans appel réseau
-    client_edition = str(data.get('edition', '') or '').strip().lower()
-    if COMMUNITY_EDITION or client_edition == 'community':
-        print("DEBUG LICENSE: bypass community (COMMUNITY_EDITION=%s, client_edition=%s)" % (COMMUNITY_EDITION, client_edition), flush=True)
-        return jsonify({"ok": True, "expiration": "COMMUNITY", "trial": False, "community": True})
-    try:
-        email = normalize_email(data.get('email') or AUDIO_CONFIG.get("license_email") or "")
-        if not is_valid_email(email):
-            return jsonify({"ok": False, "error": "Email invalide"}), 400
-
-        r = requests.post(
-            f"{LICENSE_API_URL}/license/trial/activate-desktop",
-            json={"email": email, "hwid": LICENSE_MGR.hwid, "edition": "community" if COMMUNITY_EDITION else "private"},
-            timeout=(LICENSE_ACTIVATE_CONNECT_TIMEOUT, LICENSE_ACTIVATE_READ_TIMEOUT),
-        )
-        payload = {}
-        try:
-            payload = r.json()
-        except Exception:
-            payload = {}
-        if not r.ok or not payload.get("ok"):
-            return jsonify({"ok": False, "error": payload.get("error", f"Activation essai refusée ({r.status_code})")}), 403
-
-        trial_key = (payload.get("license_key") or "").strip().upper()
-        voice_trial_key = (payload.get("voice_license_key") or trial_key).strip().upper()
-        expiration = payload.get("expiration", "N/A")
-
-        LICENSE_MGR.is_activated = True
-        LICENSE_MGR.license_key = trial_key
-        LICENSE_MGR.expiration_str = expiration
-        LICENSE_MGR.last_error = ""
-
-        VOICE_LICENSE_MGR.is_activated = True
-        VOICE_LICENSE_MGR.license_key = voice_trial_key
-        VOICE_LICENSE_MGR.expiration_str = expiration
-        VOICE_LICENSE_MGR.last_error = ""
-
-        AUDIO_CONFIG["license_key"] = trial_key
-        AUDIO_CONFIG["voice_license_key"] = voice_trial_key
-        AUDIO_CONFIG["license_email"] = email
-        AUDIO_CONFIG["trial_voice_seconds_used_local"] = 0
-        save_settings()
-
-        return jsonify({"ok": True, "expiration": expiration, "trial": True})
-    except requests.exceptions.ConnectTimeout:
-        return jsonify({"ok": False, "error": "Serveur de licence injoignable (timeout connexion). Il est peut-être en veille (Render gratuit). Réessayez dans 30-60 secondes."}), 504
-    except requests.exceptions.ConnectionError:
-        return jsonify({"ok": False, "error": "Serveur de licence injoignable (erreur connexion). Vérifiez votre connexion internet ou réessayez dans 30-60 secondes."}), 504
-    except requests.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "Délai de réponse serveur dépassé. Le serveur démarre peut-être (Render gratuit), réessayez."}), 504
-    except Exception as e:
-        stealth_print(f"❌ [LICENCE] Exception activation essai: {type(e).__name__}: {e}")
-        return jsonify({"ok": False, "error": f"Erreur interne: {type(e).__name__}"}), 500
-
-
-@app.route('/license/hwid', methods=['GET'])
-def license_hwid_route():
-    return jsonify({"ok": True, "hwid": LICENSE_MGR.hwid})
-
-        
-def get_clean_voices_sync():
-    """Récupère la liste des voix Microsoft Edge (avec cache)."""
-    stealth_print("🔄 Récupération des voix Microsoft Edge (Patientez)...")
-    try:
-        import asyncio
-        import edge_tts
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        voices = loop.run_until_complete(edge_tts.list_voices())
-        loop.close()
-        clean_list = []
-        for v in voices:
-            if "Neural" in v["ShortName"]:
-                # Optionnel : filtrer les voix françaises si souhaité
-                # if v["Locale"].lower().startswith("fr") or "fr-" in v["ShortName"].lower():
-                #     continue
-                clean_list.append({
-                    "ShortName": v["ShortName"],
-                    "Gender": v["Gender"],
-                    "Locale": v["Locale"]
-                })
-        if not clean_list:
-            raise Exception("Liste reçue vide")
-        clean_list.sort(key=lambda x: x["ShortName"])
-        stealth_print(f"✅ {len(clean_list)} voix chargées.")
-        return clean_list
-    except Exception as e:
-        stealth_print(f"⚠️ Erreur Connexion Microsoft ({e}) -> UTILISATION DU BACKUP.")
-        return FALLBACK_VOICES        
-
-@app.route("/voices/edge", methods=["GET"])
-def list_edge_voices():
-    global ALL_EDGE_VOICES
-    if not ALL_EDGE_VOICES:
-        ALL_EDGE_VOICES = get_clean_voices_sync()
-    return jsonify({"ok": True, "voices": ALL_EDGE_VOICES})
-
-
-@app.route("/voices/studio/list", methods=["GET"])
-def voice_studio_list():
-    try:
-        lib = _get_voice_library()
-        active_id = str(AUDIO_CONFIG.get("voice_active_id") or AUDIO_CONFIG.get("kommz_client_id") or "").strip()
-        return jsonify({
-            "ok": True,
-            "voices": lib,
-            "active_id": active_id,
-            "default_at_startup": bool(AUDIO_CONFIG.get("voice_default_at_startup", True)),
-        })
-    except Exception as e:
-        logger.exception("voice_studio_list failed")
-        return jsonify({"ok": False, "error": f"voice_studio_list: {str(e)}"}), 500
-
-
-@app.route("/voices/studio/save", methods=["POST"])
-def voice_studio_save():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-
-        voice_id = str(
-            d.get("voice_id")
-            or d.get("id")
-            or d.get("client_id")
-            or d.get("kommz_id")
-            or ""
-        ).strip()
-        if not voice_id:
-            return jsonify({"ok": False, "error": "voice_id manquant"}), 400
-
-        entry = _normalize_voice_library_entry(d)
-        lib = _get_voice_library()
-        replaced = False
-        for idx, item in enumerate(lib):
-            if str(item.get("voice_id") or "").strip() == voice_id:
-                lib[idx] = entry
-                replaced = True
-                break
-        if not replaced:
-            lib.insert(0, entry)
-
-        AUDIO_CONFIG["voice_library"] = lib[:80]
-        if _to_bool(d.get("set_active"), False):
-            _set_voice_active_id(voice_id, persist=False)
-        if "default_at_startup" in d:
-            AUDIO_CONFIG["voice_default_at_startup"] = _to_bool(d.get("default_at_startup"), True)
-
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "entry": entry,
-            "active_id": str(AUDIO_CONFIG.get("voice_active_id") or ""),
-            "default_at_startup": bool(AUDIO_CONFIG.get("voice_default_at_startup", True)),
-        })
-    except Exception as e:
-        logger.exception("voice_studio_save failed")
-        return jsonify({"ok": False, "error": f"voice_studio_save: {str(e)}"}), 500
-
-
-@app.route("/voices/studio/activate", methods=["POST"])
-def voice_studio_activate():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        voice_id = str(d.get("voice_id") or "").strip()
-        if not voice_id:
-            return jsonify({"ok": False, "error": "voice_id manquant"}), 400
-
-        exists = any(str(item.get("voice_id") or "").strip() == voice_id for item in _get_voice_library())
-        if not exists:
-            # On autorise tout de même l'activation directe via voice_id manuel.
-            _get_voice_library().insert(0, _normalize_voice_library_entry({"voice_id": voice_id, "name": voice_id}))
-            AUDIO_CONFIG["voice_library"] = _get_voice_library()[:80]
-
-        _set_voice_active_id(voice_id, persist=False)
-        if "default_at_startup" in d:
-            AUDIO_CONFIG["voice_default_at_startup"] = _to_bool(d.get("default_at_startup"), True)
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "active_id": voice_id,
-            "default_at_startup": bool(AUDIO_CONFIG.get("voice_default_at_startup", True)),
-        })
-    except Exception as e:
-        logger.exception("voice_studio_activate failed")
-        return jsonify({"ok": False, "error": f"voice_studio_activate: {str(e)}"}), 500
-
-
-@app.route("/voices/studio/delete", methods=["POST"])
-def voice_studio_delete():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        voice_id = str(d.get("voice_id") or "").strip()
-        if not voice_id:
-            return jsonify({"ok": False, "error": "voice_id manquant"}), 400
-
-        lib = [v for v in _get_voice_library() if str(v.get("voice_id") or "").strip() != voice_id]
-        AUDIO_CONFIG["voice_library"] = lib
-        if str(AUDIO_CONFIG.get("voice_active_id") or "").strip() == voice_id:
-            AUDIO_CONFIG["voice_active_id"] = ""
-        if str(AUDIO_CONFIG.get("kommz_client_id") or "").strip() == voice_id:
-            AUDIO_CONFIG["kommz_client_id"] = ""
-        save_settings()
-        return jsonify({"ok": True, "deleted": voice_id})
-    except Exception as e:
-        logger.exception("voice_studio_delete failed")
-        return jsonify({"ok": False, "error": f"voice_studio_delete: {str(e)}"}), 500
-
-
-def _synthesize_voice_preview(voice_id: str, text: str):
-    """
-    Test rapide voix studio via endpoint /synthesis (voice_id direct).
-    Retourne (audio_bytes, err_message).
-    """
-    voice_id = str(voice_id or "").strip()
-    text = str(text or "").strip()
-    if not voice_id:
-        return None, "voice_id manquant"
-    if not text:
-        return None, "texte manquant"
-
-    synth_base = _resolve_kommz_synthesis_base()
-    base_url_modal = _resolve_kommz_voice_endpoint()
-    api_key_cfg = str(AUDIO_CONFIG.get("kommz_api_key", "") or "").strip()
-    if not synth_base:
-        return None, "URL synthesis non définie"
-    if not api_key_cfg:
-        return None, "API key manquante"
-
-    speed = max(0.70, min(1.30, float(AUDIO_CONFIG.get("kommz_speed", 1.0) or 1.0)))
-    temp = max(0.0, min(1.0, float(AUDIO_CONFIG.get("kommz_temp", 0.70) or 0.70)))
-    xtts_lang = _normalize_xtts_request_lang(CURRENT_TARGET_LANG, text)
-    candidates = _build_kommz_synthesis_candidates(synth_base)
-    last_err = "Aucun endpoint synthesis disponible"
-
-    for api_url in candidates:
-        try:
-            r = requests.post(
-                api_url,
-                headers={
-                    "Authorization": f"Bearer {api_key_cfg}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "text": text,
-                    "voice_id": voice_id,
-                    "speed": speed,
-                    "temperature": temp,
-                    "language": xtts_lang,
-                },
-                timeout=(4, 45),
-            )
-            if not r.ok:
-                body = _repair_display_text((r.text or "")[:180])
-                if _looks_like_cloud_trial_limit(r.status_code, body):
-                    last_err = "Quota essai voice_id atteint ou expiré"
-                else:
-                    last_err = f"HTTP {r.status_code} {body}"
-                continue
-
-            ctype = (r.headers.get("Content-Type") or "").lower()
-            if "audio/wav" in ctype or "audio/x-wav" in ctype:
-                return r.content, ""
-
-            payload = r.json()
-            audio_url = str((payload or {}).get("audio_url") or "").strip()
-            if not audio_url:
-                last_err = "audio_url manquante"
-                continue
-            dl = requests.get(audio_url, timeout=(4, 45))
-            if not dl.ok:
-                last_err = f"download audio_url HTTP {dl.status_code}"
-                continue
-            return dl.content, ""
-        except Exception as e:
-            last_err = _repair_display_text(str(e))
-            continue
-
-    # Fallback clone direct si quota voice_id expiré.
-    if "Quota essai voice_id atteint ou expiré" in str(last_err or ""):
-        audio_source_bytes = None
-        if PRESET_VOICE_BUFFER is not None:
-            audio_source_bytes = PRESET_VOICE_BUFFER
-        elif LAST_USER_AUDIO_BUFFER is not None:
-            audio_source_bytes = LAST_USER_AUDIO_BUFFER
-        if audio_source_bytes is None:
-            return None, last_err + " (aucune référence clone disponible)"
-        if not base_url_modal:
-            return None, last_err + " (clone URL non définie)"
-
-        xtts_lang = _normalize_xtts_request_lang(CURRENT_TARGET_LANG, text)
-        clone_candidates = _build_kommz_generate_candidates(base_url_modal)
-        clone_last_err = "Aucun endpoint clone valide"
-        files = {'speaker_wav': ('audio.wav', audio_source_bytes, 'audio/wav')}
-        data = {
-            'text': text,
-            'language': xtts_lang,
-            'speed': speed,
-            'reference_text': "Mode Preview.",
-            'temperature': temp,
-        }
-        for api_url in clone_candidates:
-            try:
-                r = requests.post(api_url, files=files, data=data, timeout=(5, 180))
-                if r.ok:
-                    return r.content, ""
-                clone_last_err = _repair_display_text(f"HTTP {r.status_code} {(r.text or '')[:140]}")
-            except Exception as e:
-                clone_last_err = _repair_display_text(str(e))
-                continue
-        return None, f"{last_err} | fallback clone échoué: {clone_last_err}"
-
-    return None, last_err
-
-
-@app.route("/voices/studio/test", methods=["POST"])
-def voice_studio_test():
-    try:
-        if not has_voice_license():
-            return jsonify({"ok": False, "error": "Licence Voice requise"}), 403
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        voice_id = str(d.get("voice_id") or "").strip()
-        text = str(d.get("text") or "Test vocal Kommz Voice").strip()
-        if not voice_id:
-            return jsonify({"ok": False, "error": "voice_id manquant"}), 400
-
-        audio_blob, err = _synthesize_voice_preview(voice_id, text)
-        if not audio_blob:
-            return jsonify({"ok": False, "error": err or "Synthèse test indisponible"}), 502
-
-        threading.Thread(
-            target=resample_and_play,
-            args=([audio_blob], "", "MOI", 24000),
-            kwargs={"emotion_hint": text},
-            daemon=True,
-        ).start()
-        _set_pipeline_runtime(
-            hybrid_engine="Bypass Hybrid",
-            hybrid_detail="Préécoute Voix Studio",
-            tts_engine="Kommz Voice API",
-            tts_route=f"voice_id preview ({voice_id[:8]}...)",
-        )
-        return jsonify({"ok": True, "voice_id": voice_id})
-    except Exception as e:
-        logger.exception("voice_studio_test failed")
-        return jsonify({"ok": False, "error": f"voice_studio_test: {str(e)}"}), 500
-
-
-@app.route("/scenes/list", methods=["GET"])
-def scenes_list():
-    try:
-        return jsonify({
-            "ok": True,
-            "scenes": _get_scene_library(),
-            "active_name": str(AUDIO_CONFIG.get("scene_active_name") or ""),
-            "last_applied_at": str(AUDIO_CONFIG.get("scene_last_applied_at") or ""),
-            "auto_apply": bool(AUDIO_CONFIG.get("scene_auto_apply_enabled", False)),
-            "auto_process": str(AUDIO_CONFIG.get("scene_auto_process") or ""),
-        })
-    except Exception as e:
-        logger.exception("scenes_list failed")
-        return jsonify({"ok": False, "error": f"scenes_list: {str(e)}"}), 500
-
-
-@app.route("/scenes/save", methods=["POST"])
-def scenes_save():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-
-        name = str(d.get("name") or "").strip()
-        if not name:
-            return jsonify({"ok": False, "error": "name manquant"}), 400
-        process_name = str(d.get("process_name") or "").strip().lower()
-        if process_name and not process_name.endswith(".exe"):
-            process_name = process_name + ".exe"
-
-        use_snapshot = _to_bool(d.get("use_snapshot"), True)
-        incoming_cfg = d.get("config") if isinstance(d.get("config"), dict) else {}
-        config = _capture_scene_config() if use_snapshot else {}
-        for k in SCENE_CAPTURE_KEYS:
-            if k in incoming_cfg:
-                config[k] = incoming_cfg[k]
-
-        entry = _normalize_scene_entry({
-            "name": name,
-            "process_name": process_name,
-            "config": config,
-        })
-        lib = _get_scene_library()
-        replaced = False
-        for i, sc in enumerate(lib):
-            if str(sc.get("name") or "").strip().lower() == name.lower():
-                previous_applied_at = str(sc.get("applied_at") or "")
-                if previous_applied_at:
-                    entry["applied_at"] = previous_applied_at
-                lib[i] = entry
-                replaced = True
-                break
-        if not replaced:
-            lib.insert(0, entry)
-        AUDIO_CONFIG["scene_library"] = lib[:30]
-
-        if _to_bool(d.get("set_active"), False):
-            _apply_scene_by_name(name, source="save")
-        if "auto_apply" in d:
-            AUDIO_CONFIG["scene_auto_apply_enabled"] = _to_bool(d.get("auto_apply"), False)
-        if "auto_process" in d:
-            ap = str(d.get("auto_process") or "").strip().lower()
-            if ap and not ap.endswith(".exe"):
-                ap = ap + ".exe"
-            AUDIO_CONFIG["scene_auto_process"] = ap
-
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "entry": entry,
-            "active_name": str(AUDIO_CONFIG.get("scene_active_name") or ""),
-            "last_applied_at": str(AUDIO_CONFIG.get("scene_last_applied_at") or ""),
-        })
-    except Exception as e:
-        logger.exception("scenes_save failed")
-        return jsonify({"ok": False, "error": f"scenes_save: {str(e)}"}), 500
-
-
-@app.route("/scenes/apply", methods=["POST"])
-def scenes_apply():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        name = str(d.get("name") or "").strip()
-        ok, err, scene = _apply_scene_by_name(name, source="manual")
-        if not ok:
-            return jsonify({"ok": False, "error": err}), 404
-        if "auto_apply" in d:
-            AUDIO_CONFIG["scene_auto_apply_enabled"] = _to_bool(d.get("auto_apply"), False)
-        if "auto_process" in d:
-            ap = str(d.get("auto_process") or "").strip().lower()
-            if ap and not ap.endswith(".exe"):
-                ap = ap + ".exe"
-            AUDIO_CONFIG["scene_auto_process"] = ap
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "active_name": str(AUDIO_CONFIG.get("scene_active_name") or ""),
-            "last_applied_at": str(AUDIO_CONFIG.get("scene_last_applied_at") or ""),
-            "scene": scene,
-        })
-    except Exception as e:
-        logger.exception("scenes_apply failed")
-        return jsonify({"ok": False, "error": f"scenes_apply: {str(e)}"}), 500
-
-
-@app.route("/scenes/delete", methods=["POST"])
-def scenes_delete():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        name = str(d.get("name") or "").strip()
-        if not name:
-            return jsonify({"ok": False, "error": "name manquant"}), 400
-        lib = [sc for sc in _get_scene_library() if str(sc.get("name") or "").strip().lower() != name.lower()]
-        AUDIO_CONFIG["scene_library"] = lib
-        if str(AUDIO_CONFIG.get("scene_active_name") or "").strip().lower() == name.lower():
-            AUDIO_CONFIG["scene_active_name"] = ""
-            AUDIO_CONFIG["scene_last_applied_at"] = ""
-        save_settings()
-        return jsonify({"ok": True, "deleted": name})
-    except Exception as e:
-        logger.exception("scenes_delete failed")
-        return jsonify({"ok": False, "error": f"scenes_delete: {str(e)}"}), 500
-
-
-@app.route("/scenes/duplicate", methods=["POST"])
-def scenes_duplicate():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        name = str(d.get("name") or "").strip()
-        new_name = str(d.get("new_name") or "").strip()
-        if not name or not new_name:
-            return jsonify({"ok": False, "error": "name/new_name manquants"}), 400
-        if name.lower() == new_name.lower():
-            return jsonify({"ok": False, "error": "new_name doit être différent"}), 400
-
-        lib = _get_scene_library()
-        source = next((sc for sc in lib if str(sc.get("name") or "").strip().lower() == name.lower()), None)
-        if not source:
-            return jsonify({"ok": False, "error": "Scène source introuvable"}), 404
-        if any(str(sc.get("name") or "").strip().lower() == new_name.lower() for sc in lib):
-            return jsonify({"ok": False, "error": "Une scène avec ce nom existe déjà"}), 409
-
-        cloned = _normalize_scene_entry({
-            "name": new_name,
-            "process_name": source.get("process_name") or "",
-            "config": dict(source.get("config") or {}),
-            "updated_at": _scene_now_utc_iso(),
-            "applied_at": "",
-        })
-        lib.insert(0, cloned)
-        AUDIO_CONFIG["scene_library"] = lib[:30]
-        save_settings()
-        return jsonify({"ok": True, "entry": cloned})
-    except Exception as e:
-        logger.exception("scenes_duplicate failed")
-        return jsonify({"ok": False, "error": f"scenes_duplicate: {str(e)}"}), 500
-
-
-@app.route("/scenes/export", methods=["GET"])
-def scenes_export():
-    try:
-        data = {
-            "version": "5.2",
-            "exported_at": _scene_now_utc_iso(),
-            "active_name": str(AUDIO_CONFIG.get("scene_active_name") or ""),
-            "last_applied_at": str(AUDIO_CONFIG.get("scene_last_applied_at") or ""),
-            "auto_apply": bool(AUDIO_CONFIG.get("scene_auto_apply_enabled", False)),
-            "auto_process": str(AUDIO_CONFIG.get("scene_auto_process") or ""),
-            "scenes": _get_scene_library(),
-        }
-        return jsonify({"ok": True, "data": data})
-    except Exception as e:
-        logger.exception("scenes_export failed")
-        return jsonify({"ok": False, "error": f"scenes_export: {str(e)}"}), 500
-
-
-@app.route("/scenes/import", methods=["POST"])
-def scenes_import():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        mode = str(d.get("mode") or "merge").strip().lower()
-        payload = d.get("data")
-        if isinstance(payload, dict) and isinstance(payload.get("scenes"), list):
-            imported_raw = payload.get("scenes")
-        else:
-            imported_raw = d.get("scenes")
-        if not isinstance(imported_raw, list):
-            return jsonify({"ok": False, "error": "scenes[] manquant"}), 400
-
-        imported = [_normalize_scene_entry(x if isinstance(x, dict) else {}) for x in imported_raw]
-        imported = [x for x in imported if str(x.get("name") or "").strip()]
-
-        if mode == "replace":
-            merged = imported
-        else:
-            merged = list(_get_scene_library())
-            by_name = {str(sc.get("name") or "").strip().lower(): sc for sc in merged}
-            for sc in imported:
-                by_name[str(sc.get("name") or "").strip().lower()] = sc
-            merged = list(by_name.values())
-
-        merged.sort(key=lambda sc: str(sc.get("updated_at") or ""), reverse=True)
-        AUDIO_CONFIG["scene_library"] = merged[:30]
-
-        if "auto_apply" in d:
-            AUDIO_CONFIG["scene_auto_apply_enabled"] = _to_bool(d.get("auto_apply"), False)
-        if "auto_process" in d:
-            ap = str(d.get("auto_process") or "").strip().lower()
-            if ap and not ap.endswith(".exe"):
-                ap = ap + ".exe"
-            AUDIO_CONFIG["scene_auto_process"] = ap
-
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "count": len(AUDIO_CONFIG["scene_library"]),
-            "scenes": AUDIO_CONFIG["scene_library"],
-        })
-    except Exception as e:
-        logger.exception("scenes_import failed")
-        return jsonify({"ok": False, "error": f"scenes_import: {str(e)}"}), 500
-
-
-@app.route("/scenes/auto-config", methods=["POST"])
-def scenes_auto_config():
-    try:
-        d = request.get_json(silent=True) or {}
-        if not isinstance(d, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-        if "enabled" in d:
-            AUDIO_CONFIG["scene_auto_apply_enabled"] = _to_bool(d.get("enabled"), False)
-        if "process_name" in d:
-            proc = str(d.get("process_name") or "").strip().lower()
-            if proc and not proc.endswith(".exe"):
-                proc = proc + ".exe"
-            AUDIO_CONFIG["scene_auto_process"] = proc
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "enabled": bool(AUDIO_CONFIG.get("scene_auto_apply_enabled", False)),
-            "process_name": str(AUDIO_CONFIG.get("scene_auto_process") or ""),
-        })
-    except Exception as e:
-        logger.exception("scenes_auto_config failed")
-        return jsonify({"ok": False, "error": f"scenes_auto_config: {str(e)}"}), 500
 
 # Configuration globale moteur/voix
 @app.route("/config/full", methods=["POST"])
@@ -7082,123 +6357,6 @@ def update_target_lang():
     except Exception as e:
         stealth_print(f"❌ Erreur Remote : {e}")
         return jsonify({"ok": False})
-
-        
-@app.route("/audio/listen/toggle", methods=["POST"])
-def alt():
-    """
-    Active/desactive le mode ecoute (traduction allies/loopback).
-    Important: quand on reactive, il faut relancer le thread Deepgram, sinon
-    l'ancien stream reste arrete (et l'utilisateur doit changer de langue pour le relancer).
-    """
-    try:
-        payload = request.get_json(silent=True) or {}
-        requested = payload.get("toggle", None) if isinstance(payload, dict) else None
-
-        curr = bool(AUDIO_CONFIG.get("is_listening", True))
-        if requested is None:
-            enabled = not curr
-        else:
-            enabled = bool(requested)
-
-        AUDIO_CONFIG["is_listening"] = enabled
-        save_settings()
-
-        # Start/stop the listen engine deterministically.
-        global DG_ENGINE
-        if enabled:
-            try:
-                if "DG_ENGINE" in globals() and DG_ENGINE:
-                    DG_ENGINE.is_running = False
-            except Exception:
-                pass
-            DG_ENGINE = DeepgramEngine()
-            listen_dev_id = AUDIO_CONFIG.get("game_input_device", 0)
-            try:
-                listen_dev_id = int(listen_dev_id)
-            except Exception:
-                listen_dev_id = 0
-            threading.Thread(target=DG_ENGINE.start_streaming, args=(listen_dev_id,), daemon=True).start()
-            _push_toast("🎤 Écoute activée")
-        else:
-            try:
-                if "DG_ENGINE" in globals() and DG_ENGINE:
-                    DG_ENGINE.is_running = False
-            except Exception:
-                pass
-            _push_toast("🔇 Écoute désactivée")
-
-        return jsonify({"ok": True, "is_listening": enabled})
-    except Exception as e:
-        stealth_print(f"❌ Erreur toggle ecoute: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/profile/competitive", methods=["POST"])
-def apply_competitive_listen_profile():
-    """
-    Preset écoute orienté jeu vocal (Discord / ingame):
-    - meilleure accroche des phrases courtes
-    - moins de blocage audio sur répétitions proches
-    - mode multi-langue robuste
-    """
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        AUDIO_CONFIG["is_listening"] = True
-        AUDIO_CONFIG["ally_recognition_lang"] = "multi"
-        AUDIO_CONFIG["ally_block_french"] = False
-        AUDIO_CONFIG["ally_sentence_punct_min_words"] = 2
-        AUDIO_CONFIG["ally_sentence_hard_flush_words"] = 6
-        AUDIO_CONFIG["ally_tts_similarity_play_below"] = 0.93
-        AUDIO_CONFIG["ally_tts_duplicate_window_s"] = 1.6
-        AUDIO_CONFIG["ally_tts_force_on_speech_final"] = True
-        AUDIO_CONFIG["ally_tts_force_min_chars"] = 8
-        AUDIO_CONFIG["ally_tts_min_gap_s"] = 0.55
-        AUDIO_CONFIG["ally_tts_short_merge_words"] = 3
-        AUDIO_CONFIG["ally_tts_short_merge_chars"] = 18
-        AUDIO_CONFIG["ally_tts_short_merge_window_s"] = 1.20
-        AUDIO_CONFIG["ally_tts_rate_limit_window_s"] = 9.0
-        AUDIO_CONFIG["ally_tts_rate_limit_max_plays"] = 5
-        AUDIO_CONFIG["ally_voice_focus_mode"] = "aggressive"
-        AUDIO_CONFIG["ally_autotune_enabled"] = True
-        AUDIO_CONFIG["ally_listen_profile"] = "competitive"
-        AUDIO_CONFIG["ally_game_preset"] = "custom"
-        _maybe_enable_competitive_lock_auto()
-        AUDIO_CONFIG["vad_threshold"] = 0.018
-        AUDIO_CONFIG["quality_preset"] = "balanced"
-        _apply_quality_preset("balanced", emit_log=False)
-        save_settings()
-        stealth_print("🎮 Profil écoute compétitif appliqué (multi, flush court, dedupe assoupli).")
-        return jsonify({
-            "ok": True,
-            "profile": "competitive",
-            "is_listening": True,
-            "ally_recognition_lang": AUDIO_CONFIG["ally_recognition_lang"],
-            "ally_block_french": AUDIO_CONFIG["ally_block_french"],
-            "ally_sentence_punct_min_words": AUDIO_CONFIG["ally_sentence_punct_min_words"],
-            "ally_sentence_hard_flush_words": AUDIO_CONFIG["ally_sentence_hard_flush_words"],
-            "ally_tts_similarity_play_below": AUDIO_CONFIG["ally_tts_similarity_play_below"],
-            "ally_tts_duplicate_window_s": AUDIO_CONFIG["ally_tts_duplicate_window_s"],
-            "ally_tts_force_on_speech_final": AUDIO_CONFIG["ally_tts_force_on_speech_final"],
-            "ally_tts_force_min_chars": AUDIO_CONFIG["ally_tts_force_min_chars"],
-            "ally_tts_min_gap_s": AUDIO_CONFIG["ally_tts_min_gap_s"],
-            "ally_tts_short_merge_words": AUDIO_CONFIG["ally_tts_short_merge_words"],
-            "ally_tts_short_merge_chars": AUDIO_CONFIG["ally_tts_short_merge_chars"],
-            "ally_tts_short_merge_window_s": AUDIO_CONFIG["ally_tts_short_merge_window_s"],
-            "ally_tts_rate_limit_window_s": AUDIO_CONFIG["ally_tts_rate_limit_window_s"],
-            "ally_tts_rate_limit_max_plays": AUDIO_CONFIG["ally_tts_rate_limit_max_plays"],
-            "ally_voice_focus_mode": AUDIO_CONFIG["ally_voice_focus_mode"],
-            "ally_autotune_enabled": AUDIO_CONFIG["ally_autotune_enabled"],
-            "vad_threshold": AUDIO_CONFIG["vad_threshold"],
-            "quality_preset": AUDIO_CONFIG["quality_preset"],
-            "ally_listen_profile": AUDIO_CONFIG["ally_listen_profile"],
-            "ally_competitive_lock": bool(AUDIO_CONFIG.get("ally_competitive_lock", False)),
-        })
-    except Exception as e:
-        stealth_print(f"❌ Erreur preset écoute compétitif: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 
 LISTEN_GAME_PRESETS = {
     "auto": {
@@ -8342,29 +7500,6 @@ def _apply_expressive_v5_preset(preset_key: str):
     return True, str(cfg.get("label", key) or key)
 
 
-@app.route("/audio/listen/preset/apply", methods=["POST"])
-def apply_listen_game_preset():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        key = str(data.get("preset", "") or "").strip().lower()
-        ok, info = _apply_listen_game_preset(key)
-        if not ok:
-            return jsonify({"ok": False, "error": info}), 400
-        stealth_print(f"🎮 Preset jeu écoute appliqué: {info} ({key})")
-        _push_toast(f"🎮 Preset jeu: {info}")
-        return jsonify({
-            "ok": True,
-            "preset": key,
-            "label": info,
-            "ally_game_preset": AUDIO_CONFIG.get("ally_game_preset", "custom"),
-            "ally_voice_focus_mode": AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced"),
-        })
-    except Exception as e:
-        stealth_print(f"❌ Erreur preset jeu écoute: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 
 @app.route("/audio/expressive/preset/apply", methods=["POST"])
 def apply_expressive_v5_preset():
@@ -8392,469 +7527,6 @@ def apply_expressive_v5_preset():
         })
     except Exception as e:
         stealth_print(f"❌ Erreur preset expressif V5: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/export", methods=["GET"])
-def export_listen_custom_preset():
-    try:
-        payload = {
-            "version": "v5.2",
-            "kind": "listen_preset",
-            "name": str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom"),
-            "created_at": _utc_now_iso(),
-            "config": {},
-        }
-        for k in LISTEN_PRESET_EXPORT_KEYS:
-            payload["config"][k] = AUDIO_CONFIG.get(k)
-        return jsonify({"ok": True, "preset": payload})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/import", methods=["POST"])
-def import_listen_custom_preset():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return jsonify({"ok": False, "error": "payload JSON invalide"}), 400
-
-        preset = data.get("preset") if isinstance(data.get("preset"), dict) else data
-        cfg = preset.get("config") if isinstance(preset.get("config"), dict) else {}
-        if not cfg:
-            return jsonify({"ok": False, "error": "config manquante"}), 400
-
-        for k in LISTEN_PRESET_EXPORT_KEYS:
-            if k in cfg:
-                AUDIO_CONFIG[k] = cfg[k]
-
-        # Garde-fous.
-        _sanitize_listen_config_guards()
-
-        save_settings()
-        stealth_print(f"📥 Preset écoute importé: {AUDIO_CONFIG.get('ally_game_preset', 'custom')}")
-        return jsonify({
-            "ok": True,
-            "ally_game_preset": AUDIO_CONFIG.get("ally_game_preset", "custom"),
-            "ally_voice_focus_mode": AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced"),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/list", methods=["GET"])
-def list_listen_preset_library():
-    try:
-        lib = _get_listen_preset_library()
-        names = [str(it.get("name") or "") for it in lib]
-        return jsonify({"ok": True, "count": len(names), "presets": names})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/save", methods=["POST"])
-def save_listen_preset_library_entry():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        name = _sanitize_listen_preset_name(data.get("name") if isinstance(data, dict) else "")
-        if not name:
-            return jsonify({"ok": False, "error": "Nom preset requis"}), 400
-
-        entry = {
-            "name": name,
-            "config": _capture_listen_preset_config(),
-            "updated_at": _listen_now_utc_iso(),
-        }
-        lib = _get_listen_preset_library()
-        key = name.lower()
-        replaced = False
-        for i, it in enumerate(lib):
-            if str(it.get("name") or "").strip().lower() == key:
-                lib[i] = entry
-                replaced = True
-                break
-        if not replaced:
-            lib.insert(0, entry)
-        AUDIO_CONFIG["ally_preset_library"] = lib[:LISTEN_PRESET_LIBRARY_MAX]
-        save_settings()
-        stealth_print(f"💾 Preset écoute sauvegardé: {name}")
-        return jsonify({
-            "ok": True,
-            "saved": name,
-            "replaced": replaced,
-            "presets": [str(it.get("name") or "") for it in AUDIO_CONFIG["ally_preset_library"]],
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/load", methods=["POST"])
-def load_listen_preset_library_entry():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        name = _sanitize_listen_preset_name(data.get("name") if isinstance(data, dict) else "")
-        if not name:
-            return jsonify({"ok": False, "error": "Nom preset requis"}), 400
-        key = name.lower()
-        lib = _get_listen_preset_library()
-        item = next((it for it in lib if str(it.get("name") or "").strip().lower() == key), None)
-        if not item:
-            return jsonify({"ok": False, "error": "Preset introuvable"}), 404
-
-        cfg = item.get("config") if isinstance(item.get("config"), dict) else {}
-        for k in LISTEN_PRESET_EXPORT_KEYS:
-            if k in cfg:
-                AUDIO_CONFIG[k] = cfg[k]
-        _sanitize_listen_config_guards()
-        save_settings()
-        stealth_print(f"📂 Preset écoute chargé: {name}")
-        return jsonify({
-            "ok": True,
-            "loaded": name,
-            "ally_game_preset": AUDIO_CONFIG.get("ally_game_preset", "custom"),
-            "ally_voice_focus_mode": AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced"),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/delete", methods=["POST"])
-def delete_listen_preset_library_entry():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        name = _sanitize_listen_preset_name(data.get("name") if isinstance(data, dict) else "")
-        if not name:
-            return jsonify({"ok": False, "error": "Nom preset requis"}), 400
-        key = name.lower()
-        lib = _get_listen_preset_library()
-        new_lib = [it for it in lib if str(it.get("name") or "").strip().lower() != key]
-        if len(new_lib) == len(lib):
-            return jsonify({"ok": False, "error": "Preset introuvable"}), 404
-        AUDIO_CONFIG["ally_preset_library"] = new_lib
-        save_settings()
-        stealth_print(f"🗑️ Preset écoute supprimé: {name}")
-        return jsonify({
-            "ok": True,
-            "deleted": name,
-            "presets": [str(it.get("name") or "") for it in new_lib],
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/rename", methods=["POST"])
-def rename_listen_preset_library_entry():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        old_name = _sanitize_listen_preset_name(data.get("old_name") if isinstance(data, dict) else "")
-        new_name = _sanitize_listen_preset_name(data.get("new_name") if isinstance(data, dict) else "")
-        if not old_name or not new_name:
-            return jsonify({"ok": False, "error": "Ancien et nouveau nom requis"}), 400
-        old_key = old_name.lower()
-        new_key = new_name.lower()
-        lib = _get_listen_preset_library()
-        idx_old = -1
-        idx_new = -1
-        for i, it in enumerate(lib):
-            key = str(it.get("name") or "").strip().lower()
-            if key == old_key:
-                idx_old = i
-            if key == new_key:
-                idx_new = i
-        if idx_old < 0:
-            return jsonify({"ok": False, "error": "Preset source introuvable"}), 404
-        if idx_new >= 0 and idx_new != idx_old:
-            return jsonify({"ok": False, "error": "Un preset avec ce nom existe déjà"}), 409
-        lib[idx_old]["name"] = new_name
-        lib[idx_old]["updated_at"] = _listen_now_utc_iso()
-        AUDIO_CONFIG["ally_preset_library"] = lib[:LISTEN_PRESET_LIBRARY_MAX]
-        save_settings()
-        stealth_print(f"✏️ Preset écoute renommé: {old_name} -> {new_name}")
-        return jsonify({
-            "ok": True,
-            "old_name": old_name,
-            "new_name": new_name,
-            "presets": [str(it.get("name") or "") for it in AUDIO_CONFIG["ally_preset_library"]],
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/export", methods=["GET"])
-def export_listen_preset_library_entry():
-    try:
-        name = _sanitize_listen_preset_name(request.args.get("name", ""))
-        if not name:
-            return jsonify({"ok": False, "error": "Nom preset requis"}), 400
-        key = name.lower()
-        lib = _get_listen_preset_library()
-        item = next((it for it in lib if str(it.get("name") or "").strip().lower() == key), None)
-        if not item:
-            return jsonify({"ok": False, "error": "Preset introuvable"}), 404
-        payload = {
-            "version": "v5.2",
-            "kind": "listen_named_preset",
-            "name": str(item.get("name") or name),
-            "exported_at": _listen_now_utc_iso(),
-            "config": _repair_payload_strings(item.get("config") if isinstance(item.get("config"), dict) else {}),
-        }
-        return jsonify({"ok": True, "preset": payload})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/library/import", methods=["POST"])
-def import_listen_preset_library_entry():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return jsonify({"ok": False, "error": "Payload JSON invalide"}), 400
-        preset = data.get("preset") if isinstance(data.get("preset"), dict) else data
-        name = _sanitize_listen_preset_name(preset.get("name") if isinstance(preset, dict) else "")
-        cfg = preset.get("config") if isinstance(preset, dict) and isinstance(preset.get("config"), dict) else {}
-        if not name or not cfg:
-            return jsonify({"ok": False, "error": "Preset invalide (name/config)"}), 400
-        entry = _normalize_listen_preset_entry({
-            "name": name,
-            "config": cfg,
-            "updated_at": _listen_now_utc_iso(),
-        })
-        lib = _get_listen_preset_library()
-        key = name.lower()
-        replaced = False
-        for i, it in enumerate(lib):
-            if str(it.get("name") or "").strip().lower() == key:
-                lib[i] = entry
-                replaced = True
-                break
-        if not replaced:
-            lib.insert(0, entry)
-        AUDIO_CONFIG["ally_preset_library"] = lib[:LISTEN_PRESET_LIBRARY_MAX]
-        save_settings()
-        stealth_print(f"📥 Preset nommé importé: {name}")
-        return jsonify({
-            "ok": True,
-            "imported": name,
-            "replaced": replaced,
-            "presets": [str(it.get("name") or "") for it in AUDIO_CONFIG["ally_preset_library"]],
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/store/list", methods=["GET"])
-def list_community_preset_store():
-    try:
-        ratings = AUDIO_CONFIG.get("ally_community_preset_ratings", {})
-        if isinstance(ratings, str):
-            try:
-                import json as _json
-                ratings = _json.loads(ratings)
-            except Exception:
-                ratings = {}
-        results = []
-        for p in COMMUNITY_PRESET_STORE:
-            entry = {
-                "id": p.get("id", ""),
-                "name": p.get("name", ""),
-                "description": p.get("description", ""),
-                "author": p.get("author", ""),
-                "category": p.get("category", ""),
-                "tags": p.get("tags", []),
-                "rating_avg": p.get("rating_avg", 0.0),
-                "downloads": p.get("downloads", 0),
-                "my_rating": ratings.get(p.get("id", ""), 0),
-            }
-            results.append(entry)
-        return jsonify({"ok": True, "count": len(results), "presets": results})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/store/download", methods=["POST"])
-def download_community_preset():
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        preset_id = str(data.get("id", "") or "").strip()
-        found = None
-        for p in COMMUNITY_PRESET_STORE:
-            if p.get("id") == preset_id:
-                found = p
-                break
-        if not found:
-            return jsonify({"ok": False, "error": "Preset communautaire introuvable"}), 404
-        cfg = found.get("config") or {}
-        for k in LISTEN_PRESET_EXPORT_KEYS:
-            if k in cfg:
-                AUDIO_CONFIG[k] = cfg[k]
-        _sanitize_listen_config_guards()
-        save_settings()
-        AUDIO_CONFIG.setdefault("ally_community_preset_ratings", {})
-        ratings = AUDIO_CONFIG.get("ally_community_preset_ratings", {})
-        if isinstance(ratings, str):
-            try:
-                import json as _json
-                ratings = _json.loads(ratings)
-            except Exception:
-                ratings = {}
-        found_id = found.get("id", "")
-        my_rating = ratings.get(found_id, 0)
-        stealth_print(f"🏪 Preset communautaire téléchargé: {found.get('name', found_id)}")
-        _push_toast(f"🏪 Preset appliqué: {found.get('name', found_id)}")
-        return jsonify({
-            "ok": True,
-            "preset": found_id,
-            "name": found.get("name", ""),
-            "ally_game_preset": AUDIO_CONFIG.get("ally_game_preset", "custom"),
-            "ally_voice_focus_mode": AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced"),
-            "my_rating": my_rating,
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/store/rate", methods=["POST"])
-def rate_community_preset():
-    try:
-        data = request.get_json(silent=True) or {}
-        preset_id = str(data.get("id", "") or "").strip()
-        rating = int(data.get("rating", 0) or 0)
-        if rating < 1 or rating > 5:
-            return jsonify({"ok": False, "error": "Note entre 1 et 5"}), 400
-        found = False
-        for p in COMMUNITY_PRESET_STORE:
-            if p.get("id") == preset_id:
-                found = True
-                break
-        if not found:
-            return jsonify({"ok": False, "error": "Preset introuvable"}), 404
-        AUDIO_CONFIG.setdefault("ally_community_preset_ratings", {})
-        if isinstance(AUDIO_CONFIG["ally_community_preset_ratings"], str):
-            try:
-                import json as _json
-                AUDIO_CONFIG["ally_community_preset_ratings"] = _json.loads(AUDIO_CONFIG["ally_community_preset_ratings"])
-            except Exception:
-                AUDIO_CONFIG["ally_community_preset_ratings"] = {}
-        ratings = AUDIO_CONFIG["ally_community_preset_ratings"]
-        if not isinstance(ratings, dict):
-            ratings = {}
-        ratings[preset_id] = rating
-        AUDIO_CONFIG["ally_community_preset_ratings"] = ratings
-        save_settings()
-        stealth_print(f"⭐ Preset communautaire noté: {preset_id} → {rating}/5")
-        return jsonify({"ok": True, "id": preset_id, "rating": rating})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/schedule/list", methods=["GET"])
-def list_preset_schedule():
-    try:
-        schedules = AUDIO_CONFIG.get("ally_preset_schedule", [])
-        if not isinstance(schedules, list):
-            schedules = []
-        return jsonify({"ok": True, "count": len(schedules), "schedules": schedules})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/schedule/add", methods=["POST"])
-def add_preset_schedule():
-    try:
-        data = request.get_json(silent=True) or {}
-        name = str(data.get("name", "") or "").strip()
-        preset = str(data.get("preset", "") or "").strip()
-        days = data.get("days", [])
-        hour = int(data.get("hour", 0) or 0)
-        minute = int(data.get("minute", 0) or 0)
-        enabled = bool(data.get("enabled", True))
-        if not name or not preset:
-            return jsonify({"ok": False, "error": "Nom et preset requis"}), 400
-        valid_presets = set(LISTEN_GAME_PRESETS.keys()) | {"custom"}
-        valid_presets.update(k for k in AUDIO_CONFIG.get("ally_preset_library", []) if isinstance(k, dict) and k.get("name"))
-        if preset not in LISTEN_GAME_PRESETS and preset != "custom":
-            lib_names = [str(it.get("name", "")).strip().lower() for it in (AUDIO_CONFIG.get("ally_preset_library") or []) if isinstance(it, dict)]
-            if preset.lower() not in lib_names and preset not in LISTEN_GAME_PRESETS:
-                return jsonify({"ok": False, "error": f"Preset inconnu: {preset}"}), 400
-        entry = {
-            "name": name,
-            "preset": preset,
-            "days": days if isinstance(days, list) else [],
-            "hour": max(0, min(23, hour)),
-            "minute": max(0, min(59, minute)),
-            "enabled": enabled,
-            "last_applied": "",
-        }
-        schedules = AUDIO_CONFIG.get("ally_preset_schedule", [])
-        if not isinstance(schedules, list):
-            schedules = []
-        schedules.append(entry)
-        AUDIO_CONFIG["ally_preset_schedule"] = schedules
-        save_settings()
-        stealth_print(f"📅 Planning preset ajouté: {name} ({preset})")
-        return jsonify({"ok": True, "schedule": entry, "schedules": schedules})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/schedule/remove", methods=["POST"])
-def remove_preset_schedule():
-    try:
-        data = request.get_json(silent=True) or {}
-        name = str(data.get("name", "") or "").strip()
-        if not name:
-            return jsonify({"ok": False, "error": "Nom du planning requis"}), 400
-        schedules = AUDIO_CONFIG.get("ally_preset_schedule", [])
-        if not isinstance(schedules, list):
-            schedules = []
-        new_schedules = [s for s in schedules if str(s.get("name", "")).strip() != name]
-        if len(new_schedules) == len(schedules):
-            return jsonify({"ok": False, "error": "Planning introuvable"}), 404
-        AUDIO_CONFIG["ally_preset_schedule"] = new_schedules
-        save_settings()
-        stealth_print(f"📅 Planning preset supprimé: {name}")
-        return jsonify({"ok": True, "schedules": new_schedules})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/preset/schedule/toggle", methods=["POST"])
-def toggle_preset_schedule():
-    try:
-        data = request.get_json(silent=True) or {}
-        name = str(data.get("name", "") or "").strip()
-        if not name:
-            return jsonify({"ok": False, "error": "Nom du planning requis"}), 400
-        schedules = AUDIO_CONFIG.get("ally_preset_schedule", [])
-        if not isinstance(schedules, list):
-            schedules = []
-        found = False
-        for s in schedules:
-            if str(s.get("name", "")).strip() == name:
-                s["enabled"] = not s.get("enabled", True)
-                found = True
-                break
-        if not found:
-            return jsonify({"ok": False, "error": "Planning introuvable"}), 404
-        AUDIO_CONFIG["ally_preset_schedule"] = schedules
-        save_settings()
-        stealth_print(f"📅 Planning preset toggled: {name}")
-        return jsonify({"ok": True, "schedules": schedules})
-    except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -8888,196 +7560,9 @@ def _preset_schedule_check_loop():
                                 _push_toast(f"📅 Planning: {s.get('name')} appliqué")
         except Exception:
             pass
-        time.sleep(60)
+        _PERF_STOP_EVENT.wait(60)
 
 
-@app.route("/audio/listen/profile/default", methods=["POST"])
-def apply_default_listen_profile():
-    """Retour aux réglages écoute stables par défaut."""
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        AUDIO_CONFIG["is_listening"] = True
-        AUDIO_CONFIG["ally_recognition_lang"] = "multi"
-        AUDIO_CONFIG["ally_block_french"] = True
-        AUDIO_CONFIG["ally_sentence_punct_min_words"] = 3
-        AUDIO_CONFIG["ally_sentence_hard_flush_words"] = 10
-        AUDIO_CONFIG["ally_tts_similarity_play_below"] = 0.85
-        AUDIO_CONFIG["ally_tts_duplicate_window_s"] = 3.0
-        AUDIO_CONFIG["ally_tts_force_on_speech_final"] = True
-        AUDIO_CONFIG["ally_tts_force_min_chars"] = 8
-        AUDIO_CONFIG["ally_tts_min_gap_s"] = 0.55
-        AUDIO_CONFIG["ally_voice_focus_mode"] = "balanced"
-        AUDIO_CONFIG["ally_autotune_enabled"] = True
-        AUDIO_CONFIG["ally_listen_profile"] = "default"
-        AUDIO_CONFIG["ally_game_preset"] = "custom"
-        AUDIO_CONFIG["vad_threshold"] = 0.025
-        AUDIO_CONFIG["quality_preset"] = "balanced"
-        _apply_quality_preset("balanced", emit_log=False)
-        save_settings()
-        stealth_print("↩️ Profil écoute par défaut appliqué.")
-        return jsonify({
-            "ok": True,
-            "profile": "default",
-            "is_listening": True,
-            "ally_voice_focus_mode": AUDIO_CONFIG["ally_voice_focus_mode"],
-            "ally_listen_profile": AUDIO_CONFIG["ally_listen_profile"],
-        })
-    except Exception as e:
-        stealth_print(f"❌ Erreur preset écoute par défaut: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/focus", methods=["POST"])
-def set_listen_voice_focus():
-    """Réglage direct du filtre vocal écoute (off|balanced|aggressive|auto)."""
-    try:
-        if _is_competitive_listen_locked():
-            return _listen_lock_block_response()
-        data = request.get_json(silent=True) or {}
-        mode = str(data.get("mode", "balanced") or "balanced").strip().lower()
-        if mode not in {"off", "balanced", "aggressive", "auto", "v3"}:
-            return jsonify({"ok": False, "error": "Mode invalide. Modes: off, balanced, aggressive, auto, v3"}), 400
-
-        AUDIO_CONFIG["ally_voice_focus_mode"] = mode
-        if mode == "v3":
-            _voice_focus_v3_reset_calibration()
-            stealth_print("🎛️ Voice Focus V3 activé — calibration en cours (30s)...")
-        save_settings()
-        stealth_print(f"🎛️ Voice Focus écoute -> {mode}")
-        return jsonify({
-            "ok": True,
-            "mode": mode,
-            "ally_voice_focus_mode": AUDIO_CONFIG["ally_voice_focus_mode"],
-            "ally_voice_focus_effective": str(_listen_focus_auto_state.get("mode_effective", "balanced") or "balanced"),
-            "v3_calibrated": _voice_focus_v3_state["calibrated"] if mode == "v3" else None,
-        })
-    except Exception as e:
-        stealth_print(f"❌ Erreur réglage Voice Focus: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# V5.3: Voice Focus V3 — calibration, état, reset
-@app.route("/audio/listen/focus/v3/calibrate/start", methods=["POST"])
-def v3_calibrate_start():
-    try:
-        _voice_focus_v3_reset_calibration()
-        AUDIO_CONFIG["ally_voice_focus_mode"] = "v3"
-        save_settings()
-        _push_toast("🎛️ Voice Focus V3: calibration 30s lancée")
-        return jsonify({
-            "ok": True,
-            "message": "Calibration Voice Focus V3 lancée (30s). Parle normalement pendant la calibration.",
-            "v3_calibrated": False,
-            "calibration_duration_s": _voice_focus_v3_state["calibration_duration_s"],
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/focus/v3/calibrate/status", methods=["GET"])
-def v3_calibrate_status():
-    try:
-        st = _voice_focus_v3_state
-        elapsed = time.time() - st["calibration_started_at"] if st["calibration_started_at"] > 0 else 0.0
-        return jsonify({
-            "ok": True,
-            "calibrated": st["calibrated"],
-            "calibration_elapsed_s": round(elapsed, 1),
-            "calibration_duration_s": st["calibration_duration_s"],
-            "calibration_progress_pct": round(min(100.0, elapsed / st["calibration_duration_s"] * 100.0), 1),
-            "calibration_samples": st["calibration_samples"],
-            "vad_threshold_adaptive": round(st["vad_threshold_adaptive"], 6),
-            "voice_target_rms": round(st["voice_target_rms"], 4),
-            "noise_floor_low": round(st["noise_floor_low"], 6),
-            "noise_floor_mid": round(st["noise_floor_mid"], 6),
-            "noise_floor_high": round(st["noise_floor_high"], 6),
-            "gain_riding_ema": round(st["gain_riding_ema"], 4),
-            "voiceprint_initialized": st["voiceprint_initialized"],
-            "voiceprint_centroid_hz": round(st["voiceprint_centroid_ema"], 1),
-            "room_decay_ema": round(st["room_decay_ema"], 6),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/focus/v3/state", methods=["GET"])
-def v3_get_state():
-    try:
-        st = _voice_focus_v3_state
-        return jsonify({
-            "ok": True,
-            "calibrated": st["calibrated"],
-            "vad_threshold_adaptive": round(st["vad_threshold_adaptive"], 6),
-            "voice_target_rms": round(st["voice_target_rms"], 4),
-            "noise_floor_low": round(st["noise_floor_low"], 6),
-            "noise_floor_mid": round(st["noise_floor_mid"], 6),
-            "noise_floor_high": round(st["noise_floor_high"], 6),
-            "gain_riding_ema": round(st["gain_riding_ema"], 4),
-            "sibilance_threshold": round(st["sibilance_threshold"], 6),
-            "click_threshold": round(st["click_threshold"], 4),
-            "room_decay_ema": round(st["room_decay_ema"], 6),
-            "voiceprint_centroid_hz": round(st["voiceprint_centroid_ema"], 1),
-            "voiceprint_spread_hz": round(st["voiceprint_spread_ema"], 1),
-            "voiceprint_initialized": st["voiceprint_initialized"],
-            "calibration_samples": st["calibration_samples"],
-            "active_focus_mode": str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced") or "balanced"),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/focus/v3/reset", methods=["POST"])
-def v3_reset():
-    try:
-        _voice_focus_v3_reset_calibration()
-        return jsonify({"ok": True, "message": "Voice Focus V3 réinitialisé", "calibrated": False})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/competitive_lock", methods=["POST"])
-def set_competitive_listen_lock():
-    try:
-        data = request.get_json(silent=True) or {}
-        enabled = bool(data.get("enabled", False)) if isinstance(data, dict) else False
-        AUDIO_CONFIG["ally_competitive_lock"] = enabled
-        if not enabled:
-            AUDIO_CONFIG["ally_competitive_unlock_until_ts"] = 0.0
-        save_settings()
-        if enabled:
-            stealth_print("🔒 Verrou compétition écoute activé.")
-        else:
-            stealth_print("🔓 Verrou compétition écoute désactivé.")
-        return jsonify({
-            "ok": True,
-            "ally_competitive_lock": bool(AUDIO_CONFIG.get("ally_competitive_lock", False)),
-            "ally_competitive_lock_effective": bool(_is_competitive_listen_locked()),
-            "ally_competitive_unlock_remaining_s": max(
-                0,
-                int((float(AUDIO_CONFIG.get("ally_competitive_unlock_until_ts", 0.0) or 0.0) - time.time()) + 0.999)
-            ),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/competitive_lock_auto", methods=["POST"])
-def set_competitive_listen_lock_auto():
-    try:
-        data = request.get_json(silent=True) or {}
-        enabled = bool(data.get("enabled", True)) if isinstance(data, dict) else True
-        AUDIO_CONFIG["ally_competitive_lock_auto"] = enabled
-        save_settings()
-        stealth_print("🛡️ Verrou auto compétition -> " + ("ON" if enabled else "OFF"))
-        return jsonify({
-            "ok": True,
-            "ally_competitive_lock_auto": bool(AUDIO_CONFIG.get("ally_competitive_lock_auto", True)),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/competitive_lock/temp_unlock", methods=["POST"])
 def temp_unlock_competitive_listen_lock():
     try:
         data = request.get_json(silent=True) or {}
@@ -9104,16 +7589,6 @@ def temp_unlock_competitive_listen_lock():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/audio/listen/runtime/reset", methods=["POST"])
-def reset_listen_runtime():
-    try:
-        _reset_listen_runtime_stats()
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/health/reset", methods=["POST"])
 def reset_listen_health_runtime():
     try:
         _reset_listen_health_runtime()
@@ -9122,586 +7597,7 @@ def reset_listen_health_runtime():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# ── V5.2 Bloc 4: Benchmark preset ──────────────────────────────────
-@app.route("/audio/listen/benchmark", methods=["GET"])
-def benchmark_listen_preset():
-    """Mesure live: STT/TTS latency, CPU%, RAM, preset actif, watchdog."""
-    try:
-        import psutil
-        import os as _os
-        proc = psutil.Process(_os.getpid())
-        cpu_pct = round(proc.cpu_percent(interval=0.15), 1)
-        mem_info = proc.memory_info()
-        ram_mb = round(mem_info.rss / (1024 * 1024), 1)
-
-        latency = dict(LATENCY_RUNTIME_STATE)
-        latency["age_seconds"] = round(time.time() - float(latency.get("updated_at", 0.0) or 0.0), 1)
-
-        game_preset = str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom")
-        quality = _normalize_quality_preset(AUDIO_CONFIG.get("quality_preset", "balanced"))
-        voice_focus = str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced") or "balanced")
-        voice_focus_eff = str(_listen_focus_auto_state.get("mode_effective", "balanced") or "balanced")
-        expressive = str(last_expressive_preset_key or "libre")
-        uptime_s = int(time.time() - float(AUDIO_CONFIG.get("_startup_ts", time.time()) or time.time()))
-
-        health = _build_listen_health_snapshot()
-        wd_restarts = int(_listen_runtime.get("watchdog_restarts", 0) or 0)
-        voice_played = int(_listen_runtime.get("ally_voice_played", 0) or 0)
-
-        return jsonify({
-            "ok": True,
-            "generated_at": _listen_now_utc_iso(),
-            "preset": game_preset,
-            "quality": quality,
-            "voice_focus": voice_focus,
-            "voice_focus_effective": voice_focus_eff,
-            "expressive": expressive,
-            "uptime_seconds": uptime_s,
-            "system": {
-                "cpu_percent": cpu_pct,
-                "ram_mb": ram_mb,
-                "python_v": sys.version.split()[0] if hasattr(sys, "version") else "?",
-            },
-            "latency": latency,
-            "watchdog": {
-                "restarts": wd_restarts,
-                "health": health.get("level", "ok"),
-                "summary": health.get("summary", ""),
-            },
-            "activity": {
-                "voice_played": voice_played,
-                "text_events": int(_listen_runtime.get("ally_text_events", 0) or 0),
-            },
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/session_report/export", methods=["GET"])
-def export_listen_session_report():
-    try:
-        listen_health = _build_listen_health_snapshot()
-        report = {
-            "report_type": "kommz_v5_listen_session",
-            "generated_at": _listen_now_utc_iso(),
-            "version": str(CURRENT_VERSION or "5.2"),
-            "edition_profile": str(EDITION_PROFILE or "unknown"),
-            "cloud_features_enabled": bool(CLOUD_FEATURES_ENABLED),
-            "listen_profile": str(AUDIO_CONFIG.get("ally_listen_profile", "default") or "default"),
-            "listen_game_preset": str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom"),
-            "quality_preset": _normalize_quality_preset(AUDIO_CONFIG.get("quality_preset", "balanced")),
-            "voice_focus_mode": str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced") or "balanced"),
-            "listen_health": listen_health,
-            "listen_runtime": {
-                "ally_text_events": int(_listen_runtime.get("ally_text_events", 0) or 0),
-                "ally_voice_played": int(_listen_runtime.get("ally_voice_played", 0) or 0),
-                "ally_voice_skipped": int(_listen_runtime.get("ally_voice_skipped", 0) or 0),
-                "ally_voice_rate_limited": int(_listen_runtime.get("ally_voice_rate_limited", 0) or 0),
-                "ally_short_merged": int(_listen_runtime.get("ally_short_merged", 0) or 0),
-                "listen_conn_state": str(_listen_runtime.get("listen_conn_state", "idle") or "idle"),
-                "listen_conn_detail": str(_listen_runtime.get("listen_conn_detail", "") or ""),
-                "watchdog_restarts": int(_listen_runtime.get("watchdog_restarts", 0) or 0),
-                "watchdog_flaps": int(_listen_runtime.get("watchdog_flaps", 0) or 0),
-                "watchdog_cooldown_hits": int(_listen_runtime.get("watchdog_cooldown_hits", 0) or 0),
-                "watchdog_idle_restarts": int(_listen_runtime.get("watchdog_idle_restarts", 0) or 0),
-                "watchdog_last_idle_age_s": float(_listen_runtime.get("watchdog_last_idle_age_s", 0.0) or 0.0),
-                "watchdog_last_restart_reason": str(_listen_runtime.get("watchdog_last_restart_reason", "") or ""),
-                "last_event_at": float(_listen_runtime.get("last_event_at", 0.0) or 0.0),
-            },
-            "pipeline_runtime": _build_pipeline_runtime_payload(),
-            "latency_runtime": _build_latency_runtime_payload(),
-            "tts_fallback_runtime": _build_tts_fallback_runtime_payload(),
-            "cloud_endpoints_diag": get_cloud_endpoints_diag(force=True, cache_ttl=0),
-            "quality_log": _build_quality_log_payload()[:20],
-        }
-        repaired = _repair_payload_strings(report)
-
-        # V5.2: Export CSV si demandé
-        export_format = str(request.args.get("format", "json")).strip().lower()
-        if export_format == "csv":
-            import csv, io
-            output = io.StringIO()
-            writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
-            writer.writerow(["Champ", "Valeur"])
-            # Aplatir le rapport en lignes clé/valeur
-            def _flatten(prefix, obj):
-                rows = []
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        rows.extend(_flatten(f"{prefix}.{k}" if prefix else k, v))
-                elif isinstance(obj, list):
-                    for i, v in enumerate(obj):
-                        rows.extend(_flatten(f"{prefix}[{i}]", v))
-                else:
-                    rows.append([prefix, str(obj)])
-                return rows
-            for row in _flatten("", repaired):
-                writer.writerow(row)
-            csv_text = output.getvalue()
-            return csv_text, 200, {"Content-Type": "text/csv; charset=utf-8", "Content-Disposition": "attachment; filename=kommz_session_report.csv"}
-
-        return jsonify({"ok": True, "report": repaired})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/quickcheck", methods=["GET"])
-def listen_quickcheck_v5():
-    try:
-        listen_health = _build_listen_health_snapshot()
-        conn_state = str(_listen_runtime.get("listen_conn_state", "idle") or "idle").strip().lower()
-        wd_flaps = int(_listen_runtime.get("watchdog_flaps", 0) or 0)
-        wd_cooldowns = int(_listen_runtime.get("watchdog_cooldown_hits", 0) or 0)
-        wd_idle = int(_listen_runtime.get("watchdog_idle_restarts", 0) or 0)
-        wd_stale = int(_listen_runtime.get("watchdog_stream_stale_restarts", 0) or 0)
-        voice_played = int(_listen_runtime.get("ally_voice_played", 0) or 0)
-        voice_skipped = int(_listen_runtime.get("ally_voice_skipped", 0) or 0)
-        rate_limited = int(_listen_runtime.get("ally_voice_rate_limited", 0) or 0)
-
-        checks = []
-
-        is_listening = bool(AUDIO_CONFIG.get("is_listening", True))
-        checks.append({
-            "id": "listen_enabled",
-            "label": "Mode écoute activé",
-            "status": "ok" if is_listening else "warn",
-            "detail": "Actif" if is_listening else "Désactivé",
-        })
-
-        conn_ok = conn_state in {"connected", "waiting_audio", "paused"}
-        checks.append({
-            "id": "listen_conn_state",
-            "label": "État connexion écoute",
-            "status": "ok" if conn_ok else "warn",
-            "detail": conn_state or "unknown",
-        })
-
-        health_level = str(listen_health.get("level", "info") or "info").strip().lower()
-        checks.append({
-            "id": "listen_health",
-            "label": "Santé écoute",
-            "status": "ok" if health_level == "ok" else ("warn" if health_level in {"warn", "info"} else "err"),
-            "detail": str(listen_health.get("summary", "") or ""),
-        })
-
-        watchdog_ok = (wd_flaps <= 2 and wd_cooldowns <= 3 and wd_idle <= 3 and wd_stale <= 3)
-        checks.append({
-            "id": "watchdog_stability",
-            "label": "Stabilité watchdog",
-            "status": "ok" if watchdog_ok else "warn",
-            "detail": f"flaps={wd_flaps}, cooldown={wd_cooldowns}, idle={wd_idle}, stale={wd_stale}",
-        })
-
-        audio_activity_ok = (voice_played + voice_skipped) > 0
-        checks.append({
-            "id": "voice_activity",
-            "label": "Activité voix alliés",
-            "status": "ok" if audio_activity_ok else "warn",
-            "detail": f"played={voice_played}, skipped={voice_skipped}, rate_limited={rate_limited}",
-        })
-
-        cloud_diag = get_cloud_endpoints_diag(force=False, cache_ttl=20)
-        cloud_summary = str(cloud_diag.get("summary", "Diagnostic cloud indisponible") or "Diagnostic cloud indisponible")
-        if CLOUD_FEATURES_ENABLED:
-            cloud_ok = str(cloud_diag.get("level", "warn") or "warn").strip().lower() in {"ok", "info"}
-            checks.append({
-                "id": "cloud_diag",
-                "label": "Diagnostic cloud",
-                "status": "ok" if cloud_ok else "warn",
-                "detail": cloud_summary,
-            })
-
-        score_ok = len([c for c in checks if c.get("status") == "ok"])
-        score_total = len(checks)
-        global_status = "ok" if all(c.get("status") == "ok" for c in checks) else "warn"
-        if any(c.get("status") == "err" for c in checks):
-            global_status = "err"
-
-        return jsonify({
-            "ok": True,
-            "status": global_status,
-            "score_ok": score_ok,
-            "score_total": score_total,
-            "summary": f"Quick Check V5: {score_ok}/{score_total}",
-            "checks": checks,
-            "listen_profile": str(AUDIO_CONFIG.get("ally_listen_profile", "default") or "default"),
-            "listen_game_preset": str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom"),
-            "quality_preset": _normalize_quality_preset(AUDIO_CONFIG.get("quality_preset", "balanced")),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/debug_bundle", methods=["GET"])
-def listen_debug_bundle_v51():
-    try:
-        quick_resp = listen_quickcheck_v5()
-        quick_payload = {}
-        if hasattr(quick_resp, "get_json"):
-            quick_payload = quick_resp.get_json(silent=True) or {}
-
-        listen_health = _build_listen_health_snapshot()
-        bundle = {
-            "bundle_type": "kommz_v5.2_debug_bundle",
-            "generated_at": _listen_now_utc_iso(),
-            "version": str(CURRENT_VERSION or "5.2"),
-            "edition_profile": str(EDITION_PROFILE or "unknown"),
-            "cloud_features_enabled": bool(CLOUD_FEATURES_ENABLED),
-            "quickcheck": quick_payload if isinstance(quick_payload, dict) else {},
-            "listen_health": listen_health,
-            "listen_config": {
-                "listen_profile": str(AUDIO_CONFIG.get("ally_listen_profile", "default") or "default"),
-                "listen_game_preset": str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom"),
-                "voice_focus_mode": str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced") or "balanced"),
-                "voice_focus_effective": str(_listen_focus_auto_state.get("mode_effective", "balanced") or "balanced"),
-                "quality_preset": _normalize_quality_preset(AUDIO_CONFIG.get("quality_preset", "balanced")),
-                "watchdog_idle_threshold_s": int(AUDIO_CONFIG.get("listen_watchdog_idle_threshold_s", 75) or 75),
-                "watchdog_stream_stale_s": int(AUDIO_CONFIG.get("listen_watchdog_stream_stale_s", 22) or 22),
-            },
-            "listen_runtime": {
-                "ally_text_events": int(_listen_runtime.get("ally_text_events", 0) or 0),
-                "ally_voice_played": int(_listen_runtime.get("ally_voice_played", 0) or 0),
-                "ally_voice_skipped": int(_listen_runtime.get("ally_voice_skipped", 0) or 0),
-                "ally_voice_rate_limited": int(_listen_runtime.get("ally_voice_rate_limited", 0) or 0),
-                "ally_short_merged": int(_listen_runtime.get("ally_short_merged", 0) or 0),
-                "listen_conn_state": str(_listen_runtime.get("listen_conn_state", "idle") or "idle"),
-                "listen_conn_detail": str(_listen_runtime.get("listen_conn_detail", "") or ""),
-                "watchdog_restarts": int(_listen_runtime.get("watchdog_restarts", 0) or 0),
-                "watchdog_flaps": int(_listen_runtime.get("watchdog_flaps", 0) or 0),
-                "watchdog_cooldown_hits": int(_listen_runtime.get("watchdog_cooldown_hits", 0) or 0),
-                "watchdog_idle_restarts": int(_listen_runtime.get("watchdog_idle_restarts", 0) or 0),
-                "watchdog_stream_stale_restarts": int(_listen_runtime.get("watchdog_stream_stale_restarts", 0) or 0),
-                "watchdog_last_idle_age_s": float(_listen_runtime.get("watchdog_last_idle_age_s", 0.0) or 0.0),
-                "watchdog_last_restart_reason": str(_listen_runtime.get("watchdog_last_restart_reason", "") or ""),
-                "last_event_at": float(_listen_runtime.get("last_event_at", 0.0) or 0.0),
-            },
-            "cloud_endpoints_diag": get_cloud_endpoints_diag(force=False, cache_ttl=15),
-            "tts_fallback_runtime": _build_tts_fallback_runtime_payload(),
-            "latency_runtime": _build_latency_runtime_payload(),
-            "quality_log_tail": _build_quality_log_payload()[:15],
-        }
-        return jsonify({"ok": True, "bundle": _repair_payload_strings(bundle)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# V5.3: Analytics Dashboard V3 — métriques avancées, smart alerts, CPU
-@app.route("/audio/listen/analytics/v3/dashboard", methods=["GET"])
-def analytics_v3_dashboard():
-    try:
-        import psutil
-        cpu_pct = float(psutil.cpu_percent(interval=0.1))
-        mem = psutil.virtual_memory()
-        mem_pct = float(mem.percent)
-        sr = int(AUDIO_CONFIG.get("mic_sample_rate", 48000) or 48000)
-        bs = int(AUDIO_CONFIG.get("pipeline_block_size", 1024) or 1024)
-        buffer_latency_ms = round((bs / float(sr)) * 1000.0, 2)
-        noise_rms = round(float(_listen_focus_auto_state.get("noise_rms_ema", 0.0) or 0.0), 6)
-        crest = round(float(_listen_focus_auto_state.get("crest_ema", 0.0) or 0.0), 2)
-        snr_approx = round(20.0 * max(0.0, min(1.0, crest)), 1) if crest > 0 else 0.0
-        v3_state = _voice_focus_v3_state
-        focus_mode = str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced") or "balanced")
-        voice_activity_pct = 0.0
-        if _listen_decisions:
-            decisions = list(_listen_decisions)
-            if decisions:
-                voice_activity_pct = round(sum(1 for d in decisions if d == 1) / len(decisions) * 100.0, 1)
-        timeline = list(_game_timeline)[-20:] if _game_timeline else []
-        return jsonify({
-            "ok": True,
-            "version": "5.3",
-            "timestamp": time.time(),
-            "cpu": {
-                "percent": cpu_pct,
-                "memory_percent": mem_pct,
-            },
-            "audio_pipeline": {
-                "sample_rate": sr,
-                "block_size": bs,
-                "buffer_latency_ms": buffer_latency_ms,
-                "focus_mode": focus_mode,
-                "focus_v3_calibrated": v3_state["calibrated"],
-                "focus_v3_gain_ema": round(v3_state["gain_riding_ema"], 4),
-                "noise_rms_ema": noise_rms,
-                "snr_approx_db": snr_approx,
-            },
-            "voice_activity": {
-                "recent_activity_pct": voice_activity_pct,
-                "total_played": int(_listen_runtime.get("ally_voice_played", 0) or 0),
-                "total_skipped": int(_listen_runtime.get("ally_voice_skipped", 0) or 0),
-                "total_rate_limited": int(_listen_runtime.get("ally_voice_rate_limited", 0) or 0),
-            },
-            "watchdog": {
-                "restarts": int(_listen_runtime.get("watchdog_restarts", 0) or 0),
-                "flaps": int(_listen_runtime.get("watchdog_flaps", 0) or 0),
-                "idle_restarts": int(_listen_runtime.get("watchdog_idle_restarts", 0) or 0),
-                "stream_stale": int(_listen_runtime.get("watchdog_stream_stale_restarts", 0) or 0),
-                "last_restart_reason": str(_listen_runtime.get("watchdog_last_restart_reason", "") or ""),
-                "conn_state": str(_listen_runtime.get("listen_conn_state", "idle") or "idle"),
-            },
-            "game_detection": {
-                "auto_detect_enabled": _game_detect_auto_mode,
-                "current_game": timeline[-1]["game"] if timeline else None,
-                "recent_timeline": timeline,
-            },
-            "smart_alerts": _build_smart_alerts_v3(),
-            "uptime_s": round(time.time() - float(_listen_runtime.get("last_event_at", _listen_runtime.get("watchdog_last_tick_at", time.time())) or time.time()), 1) if _listen_runtime.get("last_event_at") else 0.0,
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-def _build_smart_alerts_v3():
-    alerts = []
-    noise_rms = float(_listen_focus_auto_state.get("noise_rms_ema", 0.0) or 0.0)
-    crest = float(_listen_focus_auto_state.get("crest_ema", 0.0) or 0.0)
-    wd_flaps = int(_listen_runtime.get("watchdog_flaps", 0) or 0)
-    wd_idle = int(_listen_runtime.get("watchdog_idle_restarts", 0) or 0)
-    voice_played = int(_listen_runtime.get("ally_voice_played", 0) or 0)
-    conn_state = str(_listen_runtime.get("listen_conn_state", "idle") or "idle")
-    time_since_last_event = time.time() - float(_listen_runtime.get("last_audio_seen_at", 0) or 0)
-
-    if noise_rms > 0.04:
-        alerts.append({"level": "warn", "msg": "Bruit de fond anormalement élevé. Vérifie ton micro ou réduit le volume du jeu.", "metric": "noise_rms", "value": round(noise_rms, 4)})
-    if crest < 1.5 and noise_rms > 0.02:
-        alerts.append({"level": "warn", "msg": "Ton micro pourrait saturer (crête faible, bruit élevé). Baisse le gain micro.", "metric": "crest_factor", "value": round(crest, 2)})
-    if conn_state == "disconnected" and time_since_last_event > 30:
-        alerts.append({"level": "err", "msg": "Écoute déconnectée depuis >30s. Vérifie ta connexion ou relance l'écoute.", "metric": "conn_state", "value": conn_state})
-    if wd_flaps >= 3:
-        alerts.append({"level": "warn", "msg": f"Watchdog instable ({wd_flaps} flaps). Redémarre l'app si le problème persiste.", "metric": "watchdog_flaps", "value": wd_flaps})
-    if wd_idle >= 4:
-        alerts.append({"level": "err", "msg": f"Watchdog: {wd_idle} redémarrages idle. Vérifie que le micro capte bien la voix.", "metric": "watchdog_idle", "value": wd_idle})
-    if voice_played == 0 and _listen_runtime.get("last_event_at", 0) and time_since_last_event > 60:
-        alerts.append({"level": "info", "msg": "Aucune voix alliée détectée récemment. Vérifie que le jeu produit des voix.", "metric": "voice_activity", "value": 0})
-
-    try:
-        import psutil
-        cpu = psutil.cpu_percent(interval=0.05)
-        if cpu > 90:
-            alerts.append({"level": "warn", "msg": f"CPU élevé ({cpu}%). Les perfs peuvent être impactées.", "metric": "cpu", "value": cpu})
-    except Exception:
-        pass
-
-    if not alerts:
-        alerts.append({"level": "ok", "msg": "Tout va bien. Aucune alerte.", "metric": "all_clear", "value": "ok"})
-    return alerts
-
-
-@app.route("/audio/listen/analytics/v3/smart_alerts", methods=["GET"])
-def smart_alerts_v3():
-    try:
-        return jsonify({"ok": True, "alerts": _build_smart_alerts_v3()})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# V5.2: Auto-bug report (screenshot + debug bundle en ZIP)
-@app.route("/audio/listen/auto_bug_report", methods=["GET"])
-def auto_bug_report():
-    try:
-        import io, zipfile, base64, tempfile
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            # Screenshot (PIL ImageGrab si dispo)
-            try:
-                from PIL import ImageGrab
-                import tkinter as tk
-                root = tk.Tk(); root.withdraw()
-                img = ImageGrab.grab()
-                img_bytes = io.BytesIO()
-                img.save(img_bytes, format="PNG")
-                zf.writestr("screenshot.png", img_bytes.getvalue())
-                root.destroy()
-            except Exception:
-                zf.writestr("screenshot_error.txt", "PIL/tkinter non disponible")
-            # Debug bundle JSON
-            quick_resp = listen_quickcheck_v5()
-            quick_payload = quick_resp.get_json(silent=True) or {} if hasattr(quick_resp, "get_json") else {}
-            bundle = {
-                "version": str(CURRENT_VERSION or "5.2"),
-                "edition": str(EDITION_PROFILE or "unknown"),
-                "quickcheck": quick_payload,
-                "listen_health": _build_listen_health_snapshot(),
-                "listen_config": {
-                    "preset": str(AUDIO_CONFIG.get("ally_game_preset", "custom")),
-                    "voice_focus": str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced")),
-                    "watchdog_idle": int(AUDIO_CONFIG.get("listen_watchdog_idle_threshold_s", 75)),
-                },
-                "stats": dict(_listen_runtime),
-            }
-            zf.writestr("debug_bundle.json", json.dumps(bundle, indent=2, default=str))
-            # Log discret
-            try:
-                with open("log_discret.txt", "r", encoding="utf-8", errors="replace") as lf:
-                    zf.writestr("log_discret.txt", lf.read())
-            except Exception:
-                pass
-        buf.seek(0)
-        from flask import send_file
-        return send_file(buf, mimetype="application/zip", as_attachment=True,
-                         download_name="kommz_bug_report.zip")
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# V5.2: Auto-détection jeu depuis le processus foreground
-@app.route("/audio/listen/detect_game", methods=["GET"])
-def detect_current_game(use_fingerprint=False):
-    try:
-        proc = _get_foreground_process_name()
-        win_title = _get_foreground_window_title() or ""
-        win_title_lower = win_title.lower()
-        detected = None
-        detected_map = None
-        detected_method = None
-        detected_confidence = 1.0
-        fingerprint_result = None
-        proc_lower = str(proc or "").strip().lower()
-        game_map = {
-            "cod": "warzone", "modernwarfare": "warzone", "warzone": "warzone",
-            "cs2": "cs2", "csgo": "cs2", "counterstrike2": "cs2",
-            "valorant": "valorant", "riotclient": "valorant",
-            "fortnite": "fortnite", "fortniteclient-win64-shipping": "fortnite",
-            "r5apex": "apex", "apex": "apex",
-            "overwatch": "overwatch",
-            "rainbowsix": "r6", "rainbow six": "r6",
-            "escapefromtarkov": "tarkov", "tarkov": "tarkov",
-            "rust": "rust", "rustclient": "rust",
-            "tslgame": "pubg", "pubg": "pubg",
-            "league of legends": "lol", "leagueclient": "lol",
-            "dota2": "dota2", "dota": "dota2",
-        }
-        # V5.3 Fallback chain: process -> window -> fingerprint -> manual
-        # Step 1: Process name detection (most reliable)
-        for key, preset in game_map.items():
-            if key in proc_lower:
-                detected = preset
-                detected_method = "process"
-                detected_confidence = 1.0
-                break
-        # Step 2: Window title for map refinement (Tarkov)
-        if detected == "tarkov" and win_title_lower:
-            tarkov_map_keywords = {
-                "factory": "tarkov_factory",
-                "woods": "tarkov_woods",
-                "customs": "tarkov_customs",
-                "interchange": "tarkov_interchange",
-                "reserve": "tarkov",
-                "shoreline": "tarkov",
-                "labs": "tarkov",
-                "streets": "tarkov",
-                "lighthouse": "tarkov",
-            }
-            for map_kw, map_preset in tarkov_map_keywords.items():
-                if map_kw in win_title_lower:
-                    detected_map = map_preset
-                    detected_method += "+window_title"
-                    break
-        # Step 3: Window title fallback for other games
-        if not detected and win_title_lower:
-            win_game_map = {
-                "counter-strike": "cs2",
-                "valorant": "valorant",
-                "fortnite": "fortnite",
-                "apex legends": "apex",
-                "overwatch": "overwatch",
-                "rainbow six": "r6",
-                "escape from tarkov": "tarkov",
-                "rust": "rust",
-                "pubg": "pubg",
-                "league of legends": "lol",
-                "dota 2": "dota2",
-            }
-            for kw, preset in win_game_map.items():
-                if kw in win_title_lower:
-                    detected = preset
-                    detected_method = "window_title"
-                    detected_confidence = 0.85
-                    break
-        # Step 4: Audio fingerprint fallback (V5.3)
-        if use_fingerprint and not detected and _afp:
-            try:
-                cached = _afp.get_cached_match(proc_lower)
-                if cached:
-                    detected = cached.get("game_key")
-                    detected_method = "fingerprint_cached"
-                    detected_confidence = cached.get("confidence", 0.75)
-                    fingerprint_result = cached
-                else:
-                    fp = _afp.capture_and_fingerprint(duration_s=2.5)
-                    if fp:
-                        match = _afp.match_fingerprint(fp)
-                        if match:
-                            detected = match["game_key"]
-                            detected_method = "fingerprint_audio"
-                            detected_confidence = match["confidence"]
-                            fingerprint_result = match
-                        _afp.set_cached_match(proc_lower, match)
-            except Exception:
-                pass
-        # V5.3: Log timeline
-        effective = detected_map or detected
-        if effective:
-            tl_entry = {
-                "ts": time.time(),
-                "game": effective,
-                "method": detected_method or "unknown",
-                "confidence": detected_confidence,
-                "process": proc,
-                "window_title": win_title,
-            }
-            _game_timeline_history.append(tl_entry)
-            if not _game_timeline or _game_timeline[-1].get("game") != effective:
-                _game_timeline.append(tl_entry)
-                if len(_game_timeline) > 100:
-                    _game_timeline[:] = _game_timeline[-100:]
-        current_preset = str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom")
-        return jsonify({
-            "ok": True,
-            "foreground_process": proc,
-            "foreground_window_title": win_title,
-            "detected_game": detected,
-            "detected_map": detected_map,
-            "effective_preset": effective,
-            "current_preset": current_preset,
-            "detection_method": detected_method,
-            "detection_confidence": round(detected_confidence, 4),
-            "fingerprint_result": fingerprint_result,
-            "match": (bool(detected) and (detected == current_preset or (detected_map and detected_map == current_preset))),
-            "hint": "Utilise POST /audio/listen/game_preset/apply pour appliquer automatiquement" if detected and (detected != current_preset and not (detected_map and detected_map == current_preset)) else None,
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 # V5.3: Detection V2 avec fingerprint audio
-@app.route("/audio/listen/detect_game_fingerprint", methods=["POST"])
-def detect_game_fingerprint():
-    try:
-        duration = float((request.get_json(silent=True) or {}).get("duration_s", 2.5))
-        duration = max(1.0, min(duration, 5.0))
-        if not _afp:
-            return jsonify({"ok": False, "error": "Module fingerprint non disponible"}), 500
-        fp = _afp.capture_and_fingerprint(duration_s=duration)
-        if not fp:
-            return jsonify({"ok": False, "error": "Aucun audio capturé. Lance un jeu ou vérifie le loopback."}), 500
-        match = _afp.match_fingerprint(fp)
-        proc = _get_foreground_process_name()
-        _afp.set_cached_match(proc, match)
-        return jsonify({
-            "ok": True,
-            "fingerprint_hash": fp["hash"],
-            "duration_s": fp["duration_s"],
-            "features_summary": {
-                "centroid": fp["features"]["centroid"],
-                "rolloff": fp["features"]["rolloff"],
-                "flatness": fp["features"]["flatness"],
-                "rms": fp["features"]["rms"],
-            },
-            "match": match,
-            "hint": "Utilise POST /audio/listen/fingerprint/contribute pour ajouter ce fingerprint à la BDD" if match is None else None,
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/fingerprint/contribute", methods=["POST"])
 def contribute_fingerprint():
     try:
         if not _afp:
@@ -9733,48 +7629,6 @@ def contribute_fingerprint():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/audio/listen/fingerprint/db/stats", methods=["GET"])
-def fingerprint_db_stats():
-    try:
-        if not _afp:
-            return jsonify({"ok": False, "error": "Module fingerprint non disponible"}), 500
-        stats = _afp.get_fingerprint_db_stats()
-        return jsonify({"ok": True, **stats})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/fingerprint/db/export", methods=["GET"])
-def fingerprint_db_export():
-    try:
-        if not _afp:
-            return jsonify({"ok": False, "error": "Module fingerprint non disponible"}), 500
-        return jsonify({"ok": True, "database": _afp.export_fingerprint_db()})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/fingerprint/db/import", methods=["POST"])
-def fingerprint_db_import():
-    try:
-        if not _afp:
-            return jsonify({"ok": False, "error": "Module fingerprint non disponible"}), 500
-        data = request.get_json(silent=True) or {}
-        db = data.get("database")
-        if not isinstance(db, dict):
-            return jsonify({"ok": False, "error": "Format invalide: 'database' dict requis"}), 400
-        _afp.import_fingerprint_db(db)
-        return jsonify({"ok": True, "message": "Base de fingerprints importée"})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/listen/detect_game_v2", methods=["GET"])
-def detect_current_game_v2():
-    return detect_current_game(use_fingerprint=True)
-
-
-@app.route("/audio/listen/auto_detect/toggle", methods=["POST"])
 def toggle_auto_detect():
     global _game_detect_auto_mode
     try:
@@ -9791,309 +7645,73 @@ def toggle_auto_detect():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/audio/listen/game_timeline", methods=["GET"])
-def get_game_timeline():
-    try:
-        limit = min(int(request.args.get("limit", "50")), 500)
-        entries = list(_game_timeline_history)[-limit:]
-        return jsonify({
-            "ok": True,
-            "timeline": entries,
-            "current_game": _game_timeline[-1]["game"] if _game_timeline else None,
-            "auto_detect_enabled": _game_detect_auto_mode,
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# V5.2: Récupérer le profil de bruit du preset jeu actif
-@app.route("/audio/listen/game_noise_profile", methods=["GET"])
-def get_game_noise_profile():
-    try:
-        preset_key = str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom").strip().lower()
-        preset = LISTEN_GAME_PRESETS.get(preset_key)
-        noise_key = str((preset or {}).get("game_noise_profile", "") or "").strip().lower()
-        noise = GAME_NOISE_PROFILES.get(noise_key) if noise_key else None
-        return jsonify({
-            "ok": True,
-            "game_preset": preset_key,
-            "noise_profile_key": noise_key or None,
-            "noise_profile": noise,
-            "watchdog_idle_threshold_s": int(preset.get("listen_watchdog_idle_threshold_s", AUDIO_CONFIG.get("listen_watchdog_idle_threshold_s", 75)) if preset else AUDIO_CONFIG.get("listen_watchdog_idle_threshold_s", 75)),
-            "watchdog_stream_stale_s": int(preset.get("listen_watchdog_stream_stale_s", AUDIO_CONFIG.get("listen_watchdog_stream_stale_s", 22)) if preset else AUDIO_CONFIG.get("listen_watchdog_stream_stale_s", 22)),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 # V5.2: Onboarding / support flow — template Discord prêt à poster
-@app.route("/audio/listen/support_template", methods=["GET"])
-def get_support_template():
-    try:
-        from platform import system, release, version
-        quick_resp = listen_quickcheck_v5()
-        quick_payload = {}
-        if hasattr(quick_resp, "get_json"):
-            quick_payload = quick_resp.get_json(silent=True) or {}
-        game_preset = str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom")
-        expressive_key = str(last_expressive_preset_key or "libre")
-        template = {
-            "discord_title": "**Bug Report V5.2**",
-            "discord_body": f"""**Jeu**: {game_preset}
-**Preset expressif**: {expressive_key}
-**Quick Check**: {quick_payload.get('summary', 'N/A')} ({quick_payload.get('score_ok', '?')}/{quick_payload.get('score_total', '?')})
-**Version**: 5.2 Community
-**OS**: {system()} {release()}
-**Description**: [Décris ce que tu as observé]
-**Étapes pour reproduire**: [Explique comment reproduire le bug]
-""",
-            "github_title": f"[V5.2] Bug: [résumé rapide]",
-            "github_body": f"""## Description
-[Décris le bug ici]
-
-## Configuration
-- **Version**: Kommz Gamer V5.2 Community
-- **Preset jeu**: {game_preset}
-- **Preset expressif**: {expressive_key}
-- **OS**: {system()} {release()}
-- **Quick Check**: {quick_payload.get('summary', 'N/A')}
-
-## Étapes pour reproduire
-1. 
-2. 
-3. 
-
-## Comportement attendu
-
-
-## Comportement observé
-
-
-## Pack Debug
-Voir fichier joint ou demander à @Nico
-""",
-            "quickcheck": quick_payload if isinstance(quick_payload, dict) else {},
-        }
-        return jsonify({"ok": True, "template": _repair_payload_strings(template)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# V5.2: Support links centralisés
-@app.route("/audio/listen/support_links", methods=["GET"])
-def get_support_links():
-    try:
-        return jsonify({
-            "ok": True,
-            "links": {
-                "discord": "https://discord.gg/kommz-gamer",
-                "github_issues": "https://github.com/Kommz-Gamer/Kommz-Gamer/issues/new?template=bug_report.md",
-                "github_discussions": "https://github.com/Kommz-Gamer/Kommz-Gamer/discussions",
-                "patreon": "https://patreon.com/KommzInnovations",
-                "docs": "https://docs.kommz.app",
-            }
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/ui/toasts/pending", methods=["GET"])
-def get_pending_toasts():
-    """V5.2: Renvoie les toasts en attente et vide la queue (polling JS)."""
-    try:
-        with _toast_lock:
-            pending = list(QUEUED_TOASTS)
-            QUEUED_TOASTS.clear()
-        return jsonify({"ok": True, "toasts": pending})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "toasts": []}), 500
 
 
 @app.route("/audio/devices")
 def gad():
-    try: 
-        hostapis = sd.query_hostapis(); api_index = 0
-        # On priorise WASAPI pour la stabilité ROG/Câble
-        for i, api in enumerate(hostapis):
-            if "WASAPI" in api['name'].upper(): 
-                api_index = i; break
-        
-        d = sd.query_devices(); unique_i = []; unique_o = []
-        for i, dev in enumerate(d):
-            if dev['hostapi'] == api_index:
-                if dev['max_input_channels'] > 0: unique_i.append({"index": i, "name": dev['name']})
-                if dev['max_output_channels'] > 0: unique_o.append({"index": i, "name": dev['name']})
-        return jsonify({"ok":True, "output_devices": unique_o, "input_devices": unique_i})
-    except: return jsonify({"ok":False})
-
-# V5.3: Audio Pipeline Avancé — ASIO, buffer auto-tuning, multi-périphérique
-@app.route("/audio/devices/asio", methods=["GET"])
-def detect_asio_devices():
+    """
+    PATCH V5.3 : Retourne les périphériques audio avec fallback multi-API.
+    Ordre de priorité : WASAPI → DirectSound → MME → tout.
+    Corrige le bug où la liste était vide si WASAPI n'avait pas de devices.
+    """
     try:
         hostapis = sd.query_hostapis()
-        devs = sd.query_devices()
-        asio_devs = []
-        asio_api_idx = None
-        for i, api in enumerate(hostapis):
-            if "ASIO" in str(api.get("name", "")).upper():
-                asio_api_idx = i
+        all_devs = sd.query_devices()
+
+        def collect_for_api(api_idx):
+            ins, outs = [], []
+            for i, dev in enumerate(all_devs):
+                if dev.get('hostapi') != api_idx:
+                    continue
+                name = str(dev.get('name', '') or '').strip()
+                if not name:
+                    continue
+                if dev.get('max_input_channels', 0) > 0:
+                    ins.append({"index": i, "name": name})
+                if dev.get('max_output_channels', 0) > 0:
+                    outs.append({"index": i, "name": name})
+            return ins, outs
+
+        # Ordre de préférence des APIs
+        API_PRIORITY = ["WASAPI", "DIRECTSOUND", "DIRECTX", "MME", "WINDOWS WDM-KS"]
+        preferred_idx = None
+        for priority_name in API_PRIORITY:
+            for i, api in enumerate(hostapis):
+                if priority_name in api.get('name', '').upper():
+                    ins, outs = collect_for_api(i)
+                    if ins or outs:
+                        preferred_idx = i
+                        break
+            if preferred_idx is not None:
                 break
-        if asio_api_idx is not None:
-            for i, dev in enumerate(devs):
-                if int(dev.get("hostapi", -1)) == asio_api_idx:
-                    asio_devs.append({
-                        "index": i,
-                        "name": dev.get("name", ""),
-                        "max_input_channels": int(dev.get("max_input_channels", 0)),
-                        "max_output_channels": int(dev.get("max_output_channels", 0)),
-                        "default_samplerate": int(dev.get("default_samplerate", 0)),
-                    })
+
+        if preferred_idx is not None:
+            unique_i, unique_o = collect_for_api(preferred_idx)
+        else:
+            # Dernier fallback : collecter TOUS les périphériques toutes APIs
+            unique_i, unique_o = [], []
+            seen_i, seen_o = set(), set()
+            for i, dev in enumerate(all_devs):
+                name = str(dev.get('name', '') or '').strip()
+                if not name:
+                    continue
+                if dev.get('max_input_channels', 0) > 0 and name not in seen_i:
+                    unique_i.append({"index": i, "name": name})
+                    seen_i.add(name)
+                if dev.get('max_output_channels', 0) > 0 and name not in seen_o:
+                    unique_o.append({"index": i, "name": name})
+                    seen_o.add(name)
+
         return jsonify({
             "ok": True,
-            "asio_available": asio_api_idx is not None,
-            "asio_api_index": asio_api_idx,
-            "asio_devices": asio_devs,
-            "host_api_count": len(hostapis),
+            "output_devices": unique_o,
+            "input_devices": unique_i,
+            "api_used": hostapis[preferred_idx]['name'] if preferred_idx is not None else "all"
         })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/pipeline/buffer/auto_tune", methods=["POST"])
-def pipeline_buffer_auto_tune():
-    try:
-        data = request.get_json(silent=True) or {}
-        target_latency_ms = float(data.get("target_latency_ms", 20.0))
-        target_latency_ms = max(5.0, min(target_latency_ms, 100.0))
-        sr = int(AUDIO_CONFIG.get("mic_sample_rate", 48000) or 48000)
-        block_sizes = [64, 128, 256, 512, 1024, 2048, 4096]
-        best_bs = 1024
-        best_latency = float("inf")
-        latencies = {}
-        for bs in block_sizes:
-            latency_ms = (bs / float(sr)) * 1000.0
-            latencies[str(bs)] = round(latency_ms, 2)
-            diff = abs(latency_ms - target_latency_ms)
-            if diff < best_latency:
-                best_latency = diff
-                best_bs = bs
-        AUDIO_CONFIG["pipeline_block_size"] = best_bs
-        AUDIO_CONFIG["pipeline_target_latency_ms"] = target_latency_ms
-        save_settings()
-        return jsonify({
-            "ok": True,
-            "sample_rate": sr,
-            "target_latency_ms": target_latency_ms,
-            "recommended_block_size": best_bs,
-            "recommended_latency_ms": round((best_bs / float(sr)) * 1000.0, 2),
-            "all_block_size_latencies": latencies,
-            "pipeline_block_size": AUDIO_CONFIG.get("pipeline_block_size", 1024),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/pipeline/multi_device", methods=["GET"])
-def pipeline_multi_device_info():
-    try:
-        devs = sd.query_devices()
-        hostapis = sd.query_hostapis()
-        inputs = []
-        outputs = []
-        for i, dev in enumerate(devs):
-            name = dev.get("name", "")
-            api_idx = int(dev.get("hostapi", -1))
-            api_name = str(hostapis[api_idx].get("name", "")) if 0 <= api_idx < len(hostapis) else "inconnu"
-            info = {
-                "index": i,
-                "name": name,
-                "host_api": api_name,
-                "sample_rate": int(dev.get("default_samplerate", 0)),
-                "is_virtual": any(x in str(name).upper() for x in ["CABLE", "VB-AUDIO", "VIRTUAL", "VOICEMEETER"]),
-            }
-            if int(dev.get("max_input_channels", 0)) > 0:
-                info["channels"] = int(dev.get("max_input_channels", 0))
-                inputs.append(info)
-            if int(dev.get("max_output_channels", 0)) > 0:
-                info["channels"] = int(dev.get("max_output_channels", 0))
-                outputs.append(info)
-        return jsonify({
-            "ok": True,
-            "input_devices": inputs,
-            "output_devices": outputs,
-            "current_game_input": AUDIO_CONFIG.get("game_input_device", 0),
-            "current_game_output": AUDIO_CONFIG.get("game_output_device", 0),
-            "current_mic_sample_rate": AUDIO_CONFIG.get("mic_sample_rate", 48000),
-            "current_block_size": AUDIO_CONFIG.get("pipeline_block_size", 1024),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/audio/pipeline/latency", methods=["GET"])
-def pipeline_measure_latency():
-    try:
-        sr = int(AUDIO_CONFIG.get("mic_sample_rate", 48000) or 48000)
-        bs = int(AUDIO_CONFIG.get("pipeline_block_size", 1024) or 1024)
-        buffer_latency_ms = round((bs / float(sr)) * 1000.0, 2)
-        chunk_size = 4096
-        chunk_latency_ms = round((chunk_size / float(sr)) * 1000.0, 2)
-        return jsonify({
-            "ok": True,
-            "sample_rate": sr,
-            "block_size": bs,
-            "buffer_latency_ms": buffer_latency_ms,
-            "chunk_size": chunk_size,
-            "chunk_latency_ms": chunk_latency_ms,
-            "estimated_total_ms": round(buffer_latency_ms + chunk_latency_ms + 15.0, 1),
-            "note": "Latence estimée (buffer + chunk + ~15ms overhead). STT/TTS non inclus.",
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route("/subs/live.vtt")
-def sl():
-    # VTT utilise par OBS/browser overlay. On encode un "speaker tag" via <v ...> pour
-    # permettre un rendu colore (USER/ALLY/SYS) cote overlay.html.
-    o = ["WEBVTT", ""]
-    n = time.time()
-    recent = [x for x in subs_buffer if (n - float(x.get("timestamp", 0) or 0)) < 10.0]
-    for i, s in enumerate(recent):
-        try:
-            lang = str(s.get("lang", "") or "")
-            is_user = bool(s.get("is_user", False))
-            is_ally = ("ALLIÉ" in lang) or ("ALLY" in lang)
-            role = "USER"
-            if "SYS" in lang:
-                role = "SYS"
-            elif is_ally:
-                role = "ALLY"
-            elif is_user:
-                role = "USER"
-            txt = str(s.get("text", "") or "").strip()
-            if not txt:
-                continue
-            o.extend([f"{i+1}", "00:00:00.000 --> 00:00:05.000", f"<v {role}>{txt}</v>", ""])
-        except Exception:
-            # fallback safe
-            try:
-                o.extend([f"{i+1}", "00:00:00.000 --> 00:00:05.000", str(s.get("text", "") or ""), ""])
-            except Exception:
-                pass
-    return Response("\n".join(o), mimetype="text/vtt; charset=utf-8")
-    
-@app.route('/api/set_overlay_color')
-def set_overlay_color_api():
-    color = request.args.get('color')
-    if color:
-        AUDIO_CONFIG["user_overlay_color"] = color.strip()
-        save_settings()
-    return jsonify({"status": "ok", "color": AUDIO_CONFIG.get("user_overlay_color", "#00FFFF")})   
-
-@app.route('/api/set_ally_color')
-def set_ally_color_api():
-    color = request.args.get('color')
-    if color:
-        AUDIO_CONFIG["ally_overlay_color"] = color.strip()
-        save_settings()
-    return jsonify({"status": "ok", "color": AUDIO_CONFIG.get("ally_overlay_color", "#FFFF00")})    
+    except Exception as _e:
+        stealth_print(f"[audio/devices] erreur: {_e}")
+        return jsonify({"ok": False, "error": str(_e)})
     
 
 
@@ -10170,6 +7788,7 @@ def monitoring_loop():
     stream_in = None
     stream_out = None
     last_tuple = (None, None, None)
+    _resampler = None  # soxr.ResampleStream — état persistant entre blocs
 
     while True:
         enabled = bool(AUDIO_CONFIG.get("monitoring_enabled", False))
@@ -10201,16 +7820,7 @@ def monitoring_loop():
                 continue
 
             cable_out = find_cable_output_device()
-            dst_out = None
-            monitoring_device = AUDIO_CONFIG.get("monitoring_output_device")
-            if monitoring_device is not None:
-                try:
-                    dst_out = int(monitoring_device)
-                except Exception:
-                    dst_out = None
-
-            if dst_out is None:
-                dst_out = get_default_output_device_id()
+            dst_out = AUDIO_CONFIG.get("output_device") or get_default_output_device_id()
             if dst_out is None:
                 time.sleep(0.8)
                 continue
@@ -10223,56 +7833,106 @@ def monitoring_loop():
             in_ch = max(1, min(2, int(src_info.get("max_input_channels", 1))))
             out_ch = max(1, min(2, int(dst_info.get("max_output_channels", 2))))
 
-            cur_tuple = (int(src_in), int(dst_out), int(rate))
+            # BUG1 fix — rates séparés pour InputStream (CABLE) et OutputStream (casque)
+            # _find_compatible_rate testait uniquement le device de sortie → rate 192000Hz
+            # appliqué au CABLE qui ne supporte que 48000Hz → PaErrorCode -9997
+            def _find_compatible_in_rate(device, preferred, channels):
+                import sounddevice as _sd
+                for c in [preferred, 48000, 44100, 32000, 16000]:
+                    try:
+                        t = _sd.InputStream(device=device, samplerate=c, channels=channels, blocksize=512, dtype="float32")
+                        t.start(); t.stop(); t.close()
+                        return c
+                    except Exception:
+                        pass
+                return preferred
+
+            def _find_compatible_out_rate(device, preferred, channels):
+                import sounddevice as _sd
+                # Tester rate_in en premier → si accepté, pas de resampling du tout
+                # puis preferred (natif), puis fallbacks
+                for c in [rate_in, preferred, 48000, 44100, 32000, 16000]:
+                    try:
+                        t = _sd.OutputStream(device=device, samplerate=c, channels=channels, blocksize=512, dtype="float32")
+                        t.start(); t.stop(); t.close()
+                        return c
+                    except Exception:
+                        pass
+                return preferred
+
+            rate_in  = _find_compatible_in_rate(int(src_in),  int(float(src_info.get("default_samplerate", 48000) or 48000)), in_ch)
+            rate_out = _find_compatible_out_rate(int(dst_out), int(float(dst_info.get("default_samplerate", 48000) or 48000)), out_ch)
+
+            cur_tuple = (int(src_in), int(dst_out), int(rate_in), int(rate_out))
             if (stream_in is None) or (stream_out is None) or (cur_tuple != last_tuple):
-                if stream_in is not None:
-                    try:
-                        stream_in.stop()
-                        stream_in.close()
-                    except Exception:
-                        pass
-                if stream_out is not None:
-                    try:
-                        stream_out.stop()
-                        stream_out.close()
-                    except Exception:
-                        pass
+                # Fermer les anciens streams
+                for s in set([stream_in, stream_out]):
+                    if s is not None:
+                        try: s.stop(); s.close()
+                        except Exception: pass
+                stream_in = None; stream_out = None
 
-                print(f"[DEBUG F3] monitoring_output_device config: {AUDIO_CONFIG.get('monitoring_output_device')}", flush=True)
-                print(f"[DEBUG F3] dst_out sélectionné: {dst_out}", flush=True)
-                print(f"[DEBUG F3] src_in (CABLE): {src_in}", flush=True)
-                print(f"[DEBUG F3] tentative ouverture stream {src_in} -> {dst_out}", flush=True)
-
-                stream_in = sd.InputStream(
-                    device=int(src_in),
-                    samplerate=rate,
-                    channels=in_ch,
-                    blocksize=1024,
-                    dtype="float32",
-                )
+                # OutputStream ouvert séparément (devices différents → pas de duplex)
                 stream_out = sd.OutputStream(
                     device=int(dst_out),
-                    samplerate=rate,
+                    samplerate=rate_out,
                     channels=out_ch,
                     blocksize=1024,
                     dtype="float32",
+                    latency='low',
+                )
+                stream_out.start()
+
+                # ResampleStream soxr si nécessaire
+                _rs = None
+                if rate_in != rate_out:
+                    try:
+                        import soxr as _sx
+                        _rs = _sx.ResampleStream(rate_in, rate_out, in_ch, quality="VHQ", dtype="float32")
+                    except Exception:
+                        pass
+                _resampler = _rs
+                _stream_out_ref = stream_out
+
+                # Callback InputStream — s'exécute dans le thread C PortAudio
+                def _in_cb(indata, frames, time_info, status):
+                    try:
+                        src = indata.copy()
+                        if _rs is not None:
+                            src = _rs.resample_chunk(src, last=False).astype(np.float32)
+                            if src.ndim == 1:
+                                src = src[:, np.newaxis]
+                        # Adapter les canaux
+                        if src.shape[1] == 1 and out_ch >= 2:
+                            payload = np.column_stack([src[:, 0], src[:, 0]])
+                        elif src.shape[1] >= 2 and out_ch == 1:
+                            payload = src[:, :2].mean(axis=1, keepdims=True)
+                        else:
+                            payload = src[:, :out_ch]
+                        _stream_out_ref.write(payload.astype(np.float32))
+                    except Exception:
+                        pass
+
+                stream_in = sd.InputStream(
+                    device=int(src_in),
+                    samplerate=rate_in,
+                    channels=in_ch,
+                    blocksize=1024,
+                    dtype="float32",
+                    latency='low',
+                    callback=_in_cb,
                 )
                 stream_in.start()
-                stream_out.start()
                 last_tuple = cur_tuple
-                stealth_print(f"🎧 Monitoring stream: CABLE[{src_in}] -> CASQUE[{dst_out}] @ {rate}Hz")
+                stealth_print(f"🎧 Monitoring stream: CABLE[{src_in}] -> CASQUE[{dst_out}] @ SRC:{rate_in}Hz DST:{rate_out}Hz")
 
-            data, _ = stream_in.read(1024)
-            if in_ch == 1 and out_ch >= 2:
-                payload = np.column_stack((data[:, 0], data[:, 0]))
-            elif in_ch >= 2 and out_ch == 1:
-                payload = data[:, :2].mean(axis=1, keepdims=True)
-            else:
-                payload = data[:, :out_ch]
-            stream_out.write(payload)
+            # Callback actif — juste surveiller que les streams sont vivants
+            if not stream_in.active or not stream_out.active:
+                stream_in = None; stream_out = None
+                continue
+            time.sleep(0.05)
 
         except Exception as e:
-            print(f"[DEBUG F3] ERREUR ouverture stream: {e}", flush=True)
             stealth_print(f"⚠️ Monitoring loop error: {e}")
             if stream_in is not None:
                 try:
@@ -10576,6 +8236,10 @@ def hybrid_activation_loop():
                 tid = resolve_input_device_cfg(sd.default.device[0])
             if tid is None:
                 raise RuntimeError("Aucun micro valide pour Hybrid.")
+            AUDIO_CONFIG["game_input_device_key"] = _normalize_device_signature(
+                sd.query_devices()[int(tid)].get("name", ""),
+                str(sd.query_hostapis()[int(sd.query_devices()[int(tid)].get("hostapi", -1))].get("name", "")) if int(sd.query_devices()[int(tid)].get("hostapi", -1)) >= 0 else ""
+            )
             AUDIO_CONFIG["game_input_device_runtime"] = _device_runtime_payload(tid)
             info = sd.query_devices(tid)
             rate = int(info['default_samplerate'])
@@ -10760,7 +8424,47 @@ def get_physical_output_candidates(exclude_ids=None):
             except Exception:
                 pass
 
+        # Récupérer le NOM du device de sortie par défaut Windows via pycaw (Core Audio API).
+        # sd.default.device est mis en cache par PortAudio au démarrage et ne suit PAS
+        # un changement de périphérique par défaut fait dans Windows en live (Panneau son) —
+        # pycaw interroge Windows directement à chaque appel, donc toujours à jour.
+        _dflt_out_name = None
+        try:
+            from pycaw.pycaw import AudioUtilities
+            _dflt_dev_id = AudioUtilities.GetSpeakers().GetId()
+            for _d in AudioUtilities.GetAllDevices():
+                if _d.id == _dflt_dev_id:
+                    _dflt_out_name = _norm_dev_name(_d.FriendlyName)
+                    break
+        except Exception:
+            _dflt_out_name = None
+
+        # Trouver l'index PortAudio correspondant à ce nom (fallback sur sd.default.device si échec)
+        _dflt_out_idx = -1
         devs = sd.query_devices()
+        if _dflt_out_name:
+            for i, dev in enumerate(devs):
+                if int(dev.get("max_output_channels", 0)) <= 0:
+                    continue
+                if _norm_dev_name(dev.get("name", "")) == _dflt_out_name:
+                    _dflt_out_idx = i
+                    break
+        if _dflt_out_idx < 0:
+            try:
+                _dflt = sd.default.device
+                for _getter in [
+                    lambda d: int(d[1]),
+                    lambda d: int(d.output),
+                    lambda d: int(list(d)[1]),
+                ]:
+                    try:
+                        _dflt_out_idx = _getter(_dflt)
+                        if _dflt_out_idx >= 0:
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                _dflt_out_idx = -1
         hostapis = sd.query_hostapis()
         scored = []
         for i, dev in enumerate(devs):
@@ -10773,6 +8477,9 @@ def get_physical_output_candidates(exclude_ids=None):
                 continue
 
             score = 0
+            # Priorité absolue au device par défaut Windows (+200)
+            if _dflt_out_idx >= 0 and i == _dflt_out_idx:
+                score += 200
             if any(x in n for x in ["HEADSET", "CASQUE", "SPEAKERS", "HAUT-PARLEUR"]):
                 score += 50
             if any(x in n for x in ["REALTEK", "USB", "AUDIO"]):
@@ -10936,63 +8643,6 @@ def get_physical_headset(exclude_ids=None):
         pass
     return None
 
-# ✅ NEW: Classe StreamBuffer pour buffering thread-safe
-class StreamBuffer:
-    def __init__(self, maxsize=20):
-        self.queue = queue.Queue(maxsize=maxsize)
-
-    def put(self, item):
-        try:
-            self.queue.put_nowait(item)
-        except queue.Full:
-            pass  # Drop oldest if buffer full
-
-    def get(self, timeout=5.0):
-        try:
-            return self.queue.get(timeout=timeout)
-        except queue.Empty:
-            return None
-
-# ✅ OPTIMIZED: Taille de chunk augmentée pour plus de fluidité
-CHUNK_SIZE = 4096  # was 1024
-
-# ✅ OPTIMIZED: Fonction de resampling efficace
-def resample_audio(audio, sr_from=24000, sr_to=48000):
-    """
-    Resample audio efficiently.
-    Any source rate -> target rate.
-    """
-    try:
-        sr_from = int(sr_from or 0)
-        sr_to = int(sr_to or 0)
-        if sr_from <= 0 or sr_to <= 0 or len(audio) == 0:
-            return audio
-        if sr_from == sr_to:
-            return audio
-
-        # Numpy interpolation keeps the frozen build light and is sufficient
-        # for speech resampling in the real-time pipeline.
-        ratio = float(sr_to) / float(sr_from)
-        new_len = max(1, int(round(len(audio) * ratio)))
-        old_idx = np.linspace(0.0, 1.0, num=len(audio), endpoint=False)
-        new_idx = np.linspace(0.0, 1.0, num=new_len, endpoint=False)
-        return np.interp(new_idx, old_idx, audio).astype(np.float32, copy=False)
-    except Exception:
-        return audio
-
-# ✅ OPTIMIZED: Conversion PCM → float32 avec validation
-def pcm_bytes_to_float32(pcm_bytes: bytes) -> np.ndarray:
-    """
-    Convert PCM int16 bytes to float32 audio, with clipping.
-    """
-    try:
-        audio = np.frombuffer(pcm_bytes, dtype=np.int16)
-        audio = audio.astype(np.float32) / 32768.0
-        audio = np.clip(audio, -1.0, 1.0)
-        return audio
-    except Exception as e:
-        logger.error(f"❌ PCM conversion failed: {e}")
-        return np.array([], dtype=np.float32)
 
 # ✅ OPTIMIZED: Version modifiée de resample_and_play
 def resample_and_play(audio_gen, text_to_show="", speaker_name="MOI", source_hz=48000, emotion_hint=""):
@@ -11023,25 +8673,10 @@ def resample_and_play(audio_gen, text_to_show="", speaker_name="MOI", source_hz=
             cid = resolve_output_device_cfg(AUDIO_CONFIG.get("game_output_device", 0))
         if cid is not None:
             target_ids.append(int(cid))
-        # F3: on ajoute aussi un retour physique direct.
-        # Cela évite le silence si le miroir monitoring_loop rate un device CABLE.
+        # F3 actif : monitoring_loop relaie déjà CABLE→casque
+        # Ne pas ajouter les devices physiques — conflit de streams → silence
         if AUDIO_CONFIG.get("monitoring_enabled", False):
-            for did in get_monitor_output_device_ids(exclude_ids=[cid], max_devices=2):
-                _append_valid_output_device(did)
-            # Filet de sécurité: si on n'a que le CABLE, ajoute d'autres sorties.
-            if len(list(dict.fromkeys(target_ids))) <= 1:
-                try:
-                    devs = sd.query_devices()
-                    for i, d in enumerate(devs):
-                        if int(d.get("max_output_channels", 0)) <= 0:
-                            continue
-                        if cid is not None and int(i) == int(cid):
-                            continue
-                        _append_valid_output_device(int(i))
-                        if len(list(dict.fromkeys(target_ids))) >= 3:
-                            break
-                except Exception:
-                    pass
+            pass  # monitoring_loop gère le relai, TTS → CABLE suffit
     else:
         # ALLY TTS désactivé: pas d'erreur, on quitte silencieusement.
         if not AUDIO_CONFIG.get("tts_active", True):
@@ -11092,7 +8727,6 @@ def resample_and_play(audio_gen, text_to_show="", speaker_name="MOI", source_hz=
     except Exception:
         pass
 
-    import sounddevice as sd
     import numpy as np
     import wave
     import io
@@ -11106,16 +8740,6 @@ def resample_and_play(audio_gen, text_to_show="", speaker_name="MOI", source_hz=
 
         if not all_data:
             return
-
-        acquired = PLAYBACK_LOCK.acquire(timeout=8 if _is_turbo_mode_active() else 20)
-        if not acquired:
-            stealth_print("⚠️ Playback occupé, audio ignoré.")
-            if _is_turbo_mode_active():
-                _set_module_runtime("turbo", "Saturation", "Lecture occupée, ancienne file ignorée pour garder la réactivité")
-            return
-        _is_speaking = True
-        if _is_turbo_mode_active():
-            _set_module_runtime("turbo", "Lecture", "Sortie audio priorisée")
 
         # Détection du format WAV
         if all_data.startswith(b'RIFF'):
@@ -11167,29 +8791,94 @@ def resample_and_play(audio_gen, text_to_show="", speaker_name="MOI", source_hz=
         audio_48k = np.tanh(audio_48k * limiter_drive) / np.tanh(limiter_drive)
         audio_48k = np.clip(audio_48k, -1.0, 1.0)
 
-        # Jouer l'audio sur les devices ciblés (CABLE + monitoring éventuel)
-        for did in list(dict.fromkeys(target_ids)):
+        # File FIFO par flux (MOI / ALLIÉ) — remplace l'ancien lock à timeout 8s
+        # qui abandonnait silencieusement une phrase si la précédente durait plus longtemps.
+        # Ici : chaque phrase attend son tour et est TOUJOURS jouée, dans l'ordre d'arrivée.
+        queue_name = "MOI" if is_me else "ALLIÉ"
+        _ensure_playback_worker(queue_name)
+        try:
+            _playback_queues[queue_name].put(
+                (list(dict.fromkeys(target_ids)), audio_48k, speaker_name),
+                timeout=30,
+            )
+        except queue.Full:
+            stealth_print(f"⚠️ File playback {queue_name} saturée (>6 phrases en attente), audio ignoré.")
+
+    except Exception as e:
+        stealth_print(f"⚠️ Erreur Stream : {e}")
+
+
+# File d'attente FIFO de lecture — une par flux (MOI/ALLIÉ), pour ne jamais perdre
+# de phrase même si la synthèse va plus vite que la lecture audio.
+_playback_queues = {"MOI": queue.Queue(maxsize=6), "ALLIÉ": queue.Queue(maxsize=6)}
+_playback_workers_started = {}
+_playback_workers_lock = threading.Lock()
+
+
+def _ensure_playback_worker(queue_name):
+    with _playback_workers_lock:
+        if not _playback_workers_started.get(queue_name):
+            t = threading.Thread(target=_playback_worker, args=(queue_name,), daemon=True, name=f"PlaybackWorker-{queue_name}")
+            t.start()
+            _playback_workers_started[queue_name] = True
+
+
+def _playback_worker(queue_name):
+    q = _playback_queues[queue_name]
+    while True:
+        item = q.get()
+        if item is None:
+            continue
+        target_ids, audio_48k, speaker_name = item
+        _do_playback(target_ids, audio_48k, speaker_name)
+
+
+def _do_playback(target_ids, audio_48k, speaker_name):
+    global _is_speaking
+    _is_speaking = True
+    if _is_turbo_mode_active():
+        _set_module_runtime("turbo", "Lecture", "Sortie audio priorisée")
+    try:
+        for did in target_ids:
             try:
                 if did is None:
                     sd.play(audio_48k, samplerate=48000)
+                    sd.wait()
                 else:
-                    sd.play(audio_48k, samplerate=48000, device=int(did))
-                sd.wait()
+                    # BUG 2 fix — valider que le device existe avant d'ouvrir le stream
+                    try:
+                        dev_info = sd.query_devices(int(did))
+                        if int(dev_info.get("max_output_channels", 0)) <= 0:
+                            stealth_print(f"⚠️ Device [{did}] sans canaux de sortie, ignoré.")
+                            continue
+                        dev_sr = int(float(dev_info.get("default_samplerate", 48000) or 48000))
+                    except Exception as dev_err:
+                        stealth_print(f"⚠️ Device [{did}] invalide ({dev_err}), ignoré.")
+                        continue
+                    # BUG B fix — rééchantillonner pour matcher le device de sortie
+                    if dev_sr != 48000 and dev_sr > 0:
+                        audio_dev = resample_audio(audio_48k, sr_from=48000, sr_to=dev_sr)
+                    else:
+                        audio_dev = audio_48k
+                    sd.play(audio_dev, samplerate=dev_sr, device=int(did))
+                    sd.wait()
             except Exception as e:
                 dev_label = "DEFAULT" if did is None else str(did)
-                stealth_print(f"⚠️ Lecture échouée sur device [{dev_label}]: {e}")
-
+                err_str = str(e)
+                # -9996 = paDeviceUnavailable (device occupé/exclusif) → skip silencieux
+                if "-9996" in err_str or "unavailable" in err_str.lower():
+                    stealth_print(f"ℹ️ Device [{dev_label}] occupé (skip): {e}")
+                else:
+                    stealth_print(f"⚠️ Lecture échouée sur device [{dev_label}]: {e}")
         stealth_print("🔊 Lecture terminée")
-
     except Exception as e:
         stealth_print(f"⚠️ Erreur Stream : {e}")
     finally:
         _is_speaking = False
-        if PLAYBACK_LOCK.locked():
-            PLAYBACK_LOCK.release()
 
 # ==================== MOTEUR DE CAPTURE PTT ====================
 
+# MOVED TO modules/stt/stt.py
 def mic_cb(indata, frames, time, status):
     """
     Cette fonction est appelée automatiquement par la carte son
@@ -11206,12 +8895,14 @@ def mic_cb(indata, frames, time, status):
         _ptt_chunks.append(b)
 
 
+# MOVED TO modules/stt/stt.py
 def _ptt_keepalive_enabled() -> bool:
     # "Turbo" => mode reactivite: on garde le stream micro chaud + pre-roll.
     # Si besoin, on pourra exposer un toggle UI plus tard.
     return bool(AUDIO_CONFIG.get("turbo_latency_active", False))
 
 
+# MOVED TO modules/stt/stt.py
 def _ensure_ptt_stream_open(target_mic_id: int, native_rate: int, channels: int):
     """Ouvre (ou re-ouvre) le RawInputStream PTT et le laisse actif en mode keepalive."""
     global _ptt_stream, _ptt_stream_device, _ptt_rec
@@ -11241,6 +8932,7 @@ def _ensure_ptt_stream_open(target_mic_id: int, native_rate: int, channels: int)
         _ptt_stream.start()
         _ptt_stream_device = int(target_mic_id)
 
+# MOVED TO modules/stt/stt.py
 def start_rec():
     global _ptt_stream, _ptt_rec, _ptt_chunks, _ptt_stream_device, _ptt_preroll
     global _ptt_last_start_ts
@@ -11262,6 +8954,10 @@ def start_rec():
     if target_mic_id is None:
         stealth_print("❌ Aucun micro d'entrée valide détecté.")
         return
+    AUDIO_CONFIG["game_input_device_key"] = _normalize_device_signature(
+        sd.query_devices()[int(target_mic_id)].get("name", ""),
+        str(sd.query_hostapis()[int(sd.query_devices()[int(target_mic_id)].get("hostapi", -1))].get("name", "")) if int(sd.query_devices()[int(target_mic_id)].get("hostapi", -1)) >= 0 else ""
+    )
     AUDIO_CONFIG["game_input_device_runtime"] = _device_runtime_payload(target_mic_id)
 
     with _ptt_lock:
@@ -12026,7 +9722,7 @@ def load_voice_from_id(voice_id, audio_url):
     try:
         import requests
         # On télécharge le fichier WAV depuis l'URL Supabase
-        response = requests.get(audio_url)
+        response = requests.get(audio_url, timeout=(5, 30))
         
         if response.status_code == 200:
             PRESET_VOICE_BUFFER = response.content # On stocke les octets en RAM
@@ -12039,6 +9735,7 @@ def load_voice_from_id(voice_id, audio_url):
     except Exception as e:
         stealth_print(f"❌ Erreur LoadVoice: {e}")            
 
+# MOVED TO modules/stt/stt.py
 def stop_rec():
     global _ptt_stream, _ptt_rec, _ptt_chunks, LAST_USER_AUDIO_BUFFER, _ptt_stream_device # <--- AJOUT GLOBAL
     global _ptt_last_stop_ts
@@ -12135,6 +9832,8 @@ class Api:
             
                     
 
+# À DÉPLACER V5.5
+# DeepgramEngine reste dans vtp_core.py car encore fortement couplé au runtime legacy.
 class DeepgramEngine:
     def __init__(self):
         try: ctypes.windll.ole32.CoInitialize(None)
@@ -12723,8 +10422,8 @@ def select_microphone_at_startup():
             stealth_print(f"🎯 CIBLE UTILISÉE : {SELECTED_MIC_NAME} (ID {SELECTED_MIC_ID}) [config]")
             stealth_print("="*50 + "\n")
             return
-        except Exception:
-            pass
+        except Exception as e:
+            stealth_print(f"⚠️ Micro sauvegardé invalide/indisponible ({saved_mic}) : {e}")
 
     try:
         # Récupère l'ID du micro par défaut configuré dans Windows.
@@ -12746,9 +10445,9 @@ def select_microphone_at_startup():
                 SELECTED_MIC_NAME = dev['name']
                 break
 
-    # Synchronise la configuration avec le micro résolu (cache runtime uniquement).
+    # Synchronise la configuration avec le micro résolu.
     AUDIO_CONFIG["game_input_device_runtime"] = _device_runtime_payload(SELECTED_MIC_ID)
-
+    
     stealth_print(f"🎯 CIBLE UTILISÉE : {SELECTED_MIC_NAME} (ID {SELECTED_MIC_ID})")
     stealth_print("="*50 + "\n")
 
@@ -12993,6 +10692,7 @@ def hotkey_loop():
             time.sleep(1)
 
 
+# MOVED TO modules/stt/stt.py
 def transcribe_safe(audio_source, sample_rate=16000):
     """
     Version robuste : Whisper Modal prioritaire + fallback Deepgram.
@@ -13165,7 +10865,10 @@ def transcribe_safe(audio_source, sample_rate=16000):
         return "", "fr"
 
 def overlay_loop():
-    while not AUDIO_CONFIG.get("gamesense_overlay_active", False): 
+    while not (AUDIO_CONFIG.get("gamesense_overlay_active", False)
+               or AUDIO_CONFIG.get("overlay_enabled", False)
+               or AUDIO_CONFIG.get("show_own_subs_active", False)
+               or AUDIO_CONFIG.get("show_ally_subs_active", False)):
         time.sleep(1)
         
     try:
@@ -13244,65 +10947,556 @@ def overlay_loop():
     
   # ── V5.2 Bloc 4: Mini overlay desktop always-on-top (stats temps reel) ──
 def mini_stats_overlay_loop():
-    """V5.2: Petite fenetre tkinter always-on-top avec RMS, SNR, preset, uptime."""
-    import tkinter as tk, tkinter.font as tkfont
-    if not AUDIO_CONFIG.get("mini_overlay_enabled", False):
-        return
+    """
+    V5.3: No-op — le HUD externe est maintenant créé directement sur le thread principal
+    via _create_hud_window_if_enabled(), juste avant webview.start().
+    Conservé pour compatibilité avec le thread de démarrage.
+    """
+    pass  # Handled on main thread in main()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V5.3 — HUD PYSIDE6 (fenêtre vraiment transparente, always-on-top)
+# Fenêtre HUD Qt pilotée depuis le thread principal avant webview.start()
+# ═══════════════════════════════════════════════════════════════════════════
+
+_HUD_QT_WINDOW  = None  # fenêtre PySide6 du HUD
+_HUD_QT_THREAD  = None  # reliquat compat/debug : toujours None en mode main-thread
+_HUD_VISIBLE    = False
+_HUD_QT_APP     = None  # QApplication singleton
+_HUD_LABELS     = {}    # clé -> QLabel
+_HUD_QT_TIMER   = None  # timer polling status HUD
+_HUD_CMD_TIMER  = None  # timer de polling des commandes cross-thread
+_HUD_CMD_QUEUE  = queue.Queue()
+
+
+def _hud_default_xy():
     try:
-        root = tk.Tk(); root.title("Kommz Stats")
-        root.geometry("280x140-10+40")
-        root.overrideredirect(True); root.wm_attributes("-topmost", True)
-        root.configure(bg="#000000")
-        root.attributes("-alpha", 0.85)
+        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
+    except Exception:
+        screen_w, screen_h = 1920, 1080
+    saved_x = int(AUDIO_CONFIG.get("mini_overlay_x", -1) or -1)
+    saved_y = int(AUDIO_CONFIG.get("mini_overlay_y", 40) or 40)
+    if saved_x < 0 or saved_x > screen_w - 50:
+        saved_x = screen_w - 240
+    if saved_y < 0 or saved_y > screen_h - 50:
+        saved_y = 40
+    return saved_x, saved_y
 
-        if sys.platform == "win32":
-            hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-            ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x00080000 | 0x00000020)
 
-        font_hdr = tkfont.Font(family="Consolas", size=9, weight="bold")
-        font_val = tkfont.Font(family="Consolas", size=10)
-
-        labels = {}
-        for i, (key, label, color) in enumerate([
-            ("preset", "Preset:", "#8b5cf6"),
-            ("rms", "RMS:", "#3b82f6"),
-            ("snr", "SNR:", "#22c55e"),
-            ("focus", "Focus:", "#f59e0b"),
-            ("uptime", "Uptime:", "#a78bfa"),
-        ]):
-            tk.Label(root, text=label, fg="#666666", bg="#000000", font=font_hdr).place(x=10, y=8 + i * 23)
-            val = tk.Label(root, text="...", fg=color, bg="#000000", font=font_val)
-            val.place(x=75, y=6 + i * 23)
-            labels[key] = val
-
-        def _refresh():
-            try:
-                preset = str(AUDIO_CONFIG.get("ally_game_preset", "custom") or "custom")[:16]
-                labels["preset"].config(text=preset)
-
-                rms_val = float(_listen_focus_auto_state.get("noise_rms_ema", 0.0) or 0.0)
-                labels["rms"].config(text=f"{rms_val:.4f}")
-
-                focus = str(_listen_focus_auto_state.get("mode_effective", "balanced") or "balanced")[:12]
-                labels["focus"].config(text=focus)
-
-                # SNR approx via crete facteur
-                crest = float(_listen_focus_auto_state.get("crest_ema", 0.0) or 0.0)
-                snr_db = round(20.0 * max(0.0, min(1.0, crest)) if crest > 0 else 0.0, 1)
-                labels["snr"].config(text=f"{snr_db} dB")
-
-                uptime_s = max(0, int(time.time() - float(AUDIO_CONFIG.get("_startup_ts", time.time()) or time.time())))
-                h, m = divmod(uptime_s // 60, 60)
-                labels["uptime"].config(text=f"{h}h {m:02d}m")
-            except Exception:
-                pass
-            root.after(800, _refresh)
-
-        root.after(200, _refresh)
-        root.mainloop()
+def _ensure_hud_qt_app():
+    """Garantit l'existence d'une unique QApplication sur le thread principal."""
+    global _HUD_QT_APP
+    if _HUD_QT_APP is not None:
+        return _HUD_QT_APP
+    try:
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import QCoreApplication
+    except Exception as e:
+        stealth_print(f"⚠️ PySide6 erreur QApplication: {e}")
+        return None
+    import sys
+    _HUD_QT_APP = QApplication.instance() or QApplication(sys.argv)
+    try:
+        qt_app_dir = Path(QCoreApplication.applicationDirPath()).resolve()
+    except Exception:
+        qt_app_dir = BASE_EXTERNAL
+    try:
+        stealth_print(f"[Qt] applicationDirPath={qt_app_dir}")
     except Exception:
         pass
+    try:
+        qt_conf_source = BASE_INTERNAL / "qt.conf"
+        qt_conf_target = qt_app_dir / "qt.conf"
+        if qt_conf_source.exists():
+            qt_conf_content = qt_conf_source.read_text(encoding="utf-8")
+            if (not qt_conf_target.exists()) or (qt_conf_target.read_text(encoding="utf-8") != qt_conf_content):
+                qt_conf_target.write_text(qt_conf_content, encoding="utf-8")
+                stealth_print(f"[Qt] qt.conf copié vers {qt_conf_target}")
+        elif qt_app_dir == BASE_EXTERNAL:
+            qt_conf_target.write_text("[Platforms]\nWindowsArguments = dpiawareness=0\n", encoding="utf-8")
+            stealth_print(f"[Qt] qt.conf régénéré dans {qt_conf_target}")
+    except Exception as e:
+        stealth_print(f"⚠️ Qt config copy error: {e}")
+    return _HUD_QT_APP
+
+
+def _hud_build_window():
+    """Construit la fenêtre HUD PySide6 sur le thread principal."""
+    global _HUD_QT_WINDOW, _HUD_LABELS, _HUD_QT_APP, _HUD_QT_TIMER
+
+    try:
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
+        from PySide6.QtCore import Qt, QTimer
+        from PySide6.QtGui import QColor, QPainter, QPen, QBrush
+    except Exception as _e:
+        stealth_print(f"⚠️ PySide6 erreur: {_e}")
+        return None
+
+    _HUD_QT_APP = _ensure_hud_qt_app()
+    if _HUD_QT_APP is None:
+        return None
+
+    BORDER  = "#2f81f7"
+    FG_TTL  = "#2f81f7"
+    FG_KEY  = "#8b949e"
+    FG_VAL  = "#a855f7"
+    FG_OK   = "#4ade80"
+    FG_WARN = "#fbbf24"
+    FG_ERR  = "#f87171"
+
+    rows_def = [
+        ("hudShowPreset", "PRESET",  FG_VAL,  "hudPreset"),
+        ("hudShowRMS",    "RMS",     FG_VAL,  "hudRMS"),
+        ("hudShowSNR",    "SNR",     FG_VAL,  "hudSNR"),
+        ("hudShowFocus",  "FOCUS",   FG_VAL,  "hudFocus"),
+        ("hudShowUptime", "UPTIME",  FG_OK,   "hudUptime"),
+        ("hudShowMic",    "MICRO",   FG_OK,   "hudMic"),
+        ("hudShowListen", "ÉCOUTE",  FG_VAL,  "hudListen"),
+        ("hudShowGame",   "JEU",     FG_VAL,  "hudGame"),
+    ]
+
+    class HUDWindow(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.setWindowFlags(
+                Qt.FramelessWindowHint |
+                Qt.WindowStaysOnTopHint |
+                Qt.Window
+            )
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self._drag_pos = None
+            self._bg_alpha = max(10, min(255, int(AUDIO_CONFIG.get("mini_overlay_opacity", 85) * 2.55)))
+            self._setup_ui()
+            x0, y0 = _hud_default_xy()
+            self.move(x0, y0)
+            self.setWindowOpacity(0.92)
+            self.raise_()
+            self.activateWindow()
+
+        def _setup_ui(self):
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(1, 1, 1, 1)
+            outer.setSpacing(0)
+
+            title_row = QHBoxLayout()
+            title_row.setContentsMargins(8, 5, 8, 5)
+            lbl_title = QLabel("⚡ KOMMZ HUD")
+            lbl_title.setStyleSheet(
+                f"color:{FG_TTL}; font:bold 9pt 'Segoe UI'; background:transparent;")
+            title_row.addWidget(lbl_title)
+            title_row.addStretch()
+            self._close_btn = QLabel("✕")
+            self._close_btn.setStyleSheet(
+                f"color:{FG_KEY}; font:bold 9pt 'Segoe UI'; background:transparent;")
+            self._close_btn.setCursor(Qt.PointingHandCursor)
+            self._close_btn.mousePressEvent = lambda e: _hud_close_from_ui()
+            self._close_btn.enterEvent = lambda e: self._close_btn.setStyleSheet(
+                f"color:{FG_ERR}; font:bold 9pt 'Segoe UI'; background:transparent;")
+            self._close_btn.leaveEvent = lambda e: self._close_btn.setStyleSheet(
+                f"color:{FG_KEY}; font:bold 9pt 'Segoe UI'; background:transparent;")
+            title_row.addWidget(self._close_btn)
+            outer.addLayout(title_row)
+
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setStyleSheet(f"background:{BORDER}; max-height:1px; border:none;")
+            outer.addWidget(sep)
+
+            self._rows = {}
+            for cfg_key, label_text, val_color, val_key in rows_def:
+                row_w = QWidget()
+                row_w.setStyleSheet("background:transparent;")
+                row_l = QHBoxLayout(row_w)
+                row_l.setContentsMargins(8, 2, 8, 2)
+                lbl_key = QLabel(label_text)
+                lbl_key.setStyleSheet(
+                    f"color:{FG_KEY}; font:9pt 'Segoe UI'; background:transparent;")
+                lbl_key.setFixedWidth(70)
+                fsize = "7" if val_key in ("hudMic", "hudListen") else "9"
+                lbl_val = QLabel("—")
+                lbl_val.setStyleSheet(
+                    f"color:{val_color}; font:bold {fsize}pt 'Segoe UI'; background:transparent;")
+                lbl_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                row_l.addWidget(lbl_key)
+                row_l.addWidget(lbl_val, 1)
+                outer.addWidget(row_w)
+                self._rows[val_key] = (row_w, lbl_val, cfg_key)
+                _HUD_LABELS[val_key] = lbl_val
+
+            outer.addSpacing(5)
+            self.setFixedWidth(200)
+
+        def set_opacity(self, pct):
+            self._bg_alpha = max(10, min(255, int(pct * 2.55)))
+            self.update()
+
+        def apply_row_visibility(self):
+            for val_key, (row_w, lbl_val, cfg_key) in self._rows.items():
+                row_w.setVisible(AUDIO_CONFIG.get(cfg_key, True))
+            self.adjustSize()
+
+        def paintEvent(self, event):
+            p = QPainter(self)
+            p.setRenderHint(QPainter.Antialiasing)
+            rect = self.rect().adjusted(0, 0, -1, -1)
+            p.setBrush(QBrush(QColor(11, 15, 20, self._bg_alpha)))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(rect, 8, 8)
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(QColor(BORDER), 1))
+            p.drawRoundedRect(rect, 8, 8)
+            p.end()
+
+        def mousePressEvent(self, e):
+            if e.button() == Qt.LeftButton:
+                self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+        def mouseMoveEvent(self, e):
+            if e.buttons() == Qt.LeftButton and self._drag_pos:
+                new_pos = e.globalPosition().toPoint() - self._drag_pos
+                self.move(new_pos)
+                AUDIO_CONFIG["mini_overlay_x"] = new_pos.x()
+                AUDIO_CONFIG["mini_overlay_y"] = new_pos.y()
+
+        def mouseReleaseEvent(self, e):
+            self._drag_pos = None
+
+    if _HUD_QT_WINDOW is not None:
+        try:
+            _HUD_QT_WINDOW.close()
+        except Exception as e:
+            stealth_print(f"⚠️ HUD previous window close error: {e}")
+
+    _HUD_LABELS.clear()
+    win = HUDWindow()
+    _HUD_QT_WINDOW = win
+    stealth_print(f"🔍 HUD debug: win.show() appelé, position=({win.x()},{win.y()})")
+    win.show()
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    stealth_print(f"🔍 HUD visible={win.isVisible()} geometry={win.geometry()}")
+
+    def _hud_set(key, text, color):
+        lbl = _HUD_LABELS.get(key)
+        if lbl:
+            try:
+                fsize = "7" if key in ("hudMic", "hudListen") else "9"
+                lbl.setText(text)
+                lbl.setStyleSheet(
+                    f"color:{color}; font:bold {fsize}pt 'Segoe UI'; background:transparent;")
+            except Exception as e:
+                stealth_print(f"⚠️ HUD label update error ({key}): {e}")
+
+    def _poll():
+        if _HUD_QT_WINDOW is None:
+            return
+        try:
+            import urllib.request
+            with urllib.request.urlopen(
+                    f"http://127.0.0.1:{VTP_CORE_PORT}/status", timeout=0.8) as resp:
+                d = json.loads(resp.read())
+            rt = d.get("listen_runtime") or d.get("pipeline_runtime") or {}
+            try:
+                stealth_print_rl(
+                    "hud_status_keys",
+                    f"🔍 HUD status keys={sorted(list(d.keys()))[:40]}",
+                    cooldown=10.0,
+                )
+                stealth_print_rl(
+                    "hud_runtime_keys",
+                    f"🔍 HUD runtime keys={sorted(list(rt.keys()))[:40] if isinstance(rt, dict) else rt}",
+                    cooldown=10.0,
+                )
+            except Exception:
+                pass
+
+            preset_value = d.get("ally_game_preset") or d.get("quality_preset") or "—"
+            _hud_set("hudPreset", preset_value, FG_VAL)
+
+            vf_state = d.get("voice_focus_v3_state") if isinstance(d.get("voice_focus_v3_state"), dict) else {}
+            pipeline_rt = d.get("pipeline_runtime") if isinstance(d.get("pipeline_runtime"), dict) else {}
+            modules_rt = d.get("modules_runtime") if isinstance(d.get("modules_runtime"), dict) else {}
+            listen_health = d.get("listen_health") if isinstance(d.get("listen_health"), dict) else {}
+            listen_runtime = d.get("listen_runtime") if isinstance(d.get("listen_runtime"), dict) else {}
+
+            rms = None
+            for candidate in (
+                vf_state.get("noise_rms_ema"),
+                d.get("ally_voice_focus_auto_noise_rms"),
+                rt.get("noise_rms") if isinstance(rt, dict) else None,
+                listen_runtime.get("noise_rms"),
+                d.get("rms"),
+            ):
+                if candidate is not None:
+                    rms = candidate
+                    break
+            if rms is not None:
+                try:
+                    rms_value = float(rms)
+                    _hud_set("hudRMS", f"{rms_value:.4f}",
+                             FG_WARN if rms_value > 0.1 else FG_VAL)
+                except Exception:
+                    _hud_set("hudRMS", str(rms), FG_VAL)
+            else:
+                _hud_set("hudRMS", "—", FG_VAL)
+
+            snr = None
+            for candidate in (
+                vf_state.get("snr_approx_db"),
+                rt.get("snr_db") if isinstance(rt, dict) else None,
+                listen_runtime.get("snr_db"),
+                d.get("snr_db"),
+            ):
+                if candidate is not None:
+                    snr = candidate
+                    break
+            if snr is not None:
+                try:
+                    snr_value = float(snr)
+                    snr = snr_value
+                    _hud_set("hudSNR", f"{snr_value:.1f} dB",
+                             FG_OK if snr_value > 20 else (FG_VAL if snr_value > 10 else FG_WARN))
+                except Exception:
+                    _hud_set("hudSNR", str(snr), FG_VAL)
+            else:
+                _hud_set("hudSNR", "—", FG_VAL)
+
+            focus = d.get("ally_voice_focus_effective") or d.get("ally_voice_focus_mode") or "—"
+            _hud_set("hudFocus", focus, FG_WARN if focus == "aggressive" else FG_VAL)
+
+            up = None
+            for candidate in (
+                d.get("uptime_seconds"),
+                pipeline_rt.get("uptime_seconds"),
+                d.get("server_uptime_seconds"),
+            ):
+                if candidate is not None:
+                    try:
+                        up = float(candidate)
+                        break
+                    except Exception:
+                        pass
+            h2 = m2 = 0
+            if up is not None and up > 0:
+                h2, m2 = int(up // 3600), int((up % 3600) // 60)
+            _hud_set("hudUptime",
+                (f"{h2}h {m2}min" if h2 > 0 else f"{m2}min") if up is not None and up > 0 else "—", FG_OK)
+
+            if d.get("recording"):
+                _hud_set("hudMic", "🔴 REC", FG_ERR)
+            else:
+                _hud_set("hudMic", "✅ Prêt", FG_OK)
+
+            _hud_set("hudListen",
+                "ACTIF" if d.get("is_listening") else "INACTIF",
+                FG_OK   if d.get("is_listening") else FG_WARN)
+
+            game = ""
+            for candidate in (
+                d.get("game_detect_current_game"),
+                d.get("detected_game"),
+                d.get("current_game"),
+                listen_health.get("current_game"),
+                listen_runtime.get("current_game"),
+                modules_rt.get("game_auto_detect", {}).get("detail") if isinstance(modules_rt.get("game_auto_detect"), dict) else None,
+            ):
+                if candidate:
+                    game = str(candidate).strip()
+                    if game:
+                        break
+            _hud_set("hudGame", game or "—", FG_VAL)
+
+            try:
+                stealth_print_rl(
+                    "hud_values",
+                    "🔍 HUD values "
+                    f"preset={preset_value!r} "
+                    f"rms={rms!r} "
+                    f"snr={snr!r} "
+                    f"focus={focus!r} "
+                    f"uptime={up!r} "
+                    f"recording={d.get('recording')!r} "
+                    f"listening={d.get('is_listening')!r} "
+                    f"game={game!r}",
+                    cooldown=10.0,
+                )
+                stealth_print_rl(
+                    "hud_sources",
+                    "🔍 HUD sources "
+                    f"vf_keys={sorted(list(vf_state.keys()))[:12] if isinstance(vf_state, dict) else vf_state!r} "
+                    f"pipeline_keys={sorted(list(pipeline_rt.keys()))[:12] if isinstance(pipeline_rt, dict) else pipeline_rt!r} "
+                    f"listen_health_keys={sorted(list(listen_health.keys()))[:12] if isinstance(listen_health, dict) else listen_health!r}",
+                    cooldown=10.0,
+                )
+            except Exception:
+                pass
+
+            win.apply_row_visibility()
+
+        except Exception as e:
+            stealth_print_rl(
+                "hud_poll_error",
+                f"⚠️ HUD poll error: {e}",
+                cooldown=20.0,
+            )
+
+    if _HUD_QT_TIMER is not None:
+        try:
+            _HUD_QT_TIMER.stop()
+        except Exception as e:
+            stealth_print(f"⚠️ HUD timer stop error: {e}")
+
+    timer = QTimer()
+    timer.timeout.connect(_poll)
+    timer.start(1000)
+    _HUD_QT_TIMER = timer
+    globals()["_hud_qt_timer"] = timer
+    globals()["_hud_set_fn"] = _hud_set
+
+    _poll()
+    stealth_print("✅ HUD PySide6 initialisé sur main thread")
+    _hud_start_command_timer()
+    return win
+
+def _hud_close_from_ui():
+    """Ferme le HUD PySide6 proprement sans quitter l'application Qt principale."""
+    global _HUD_QT_WINDOW, _HUD_VISIBLE, _HUD_QT_THREAD, _HUD_QT_TIMER
+    _HUD_VISIBLE = False
+    win = _HUD_QT_WINDOW
+    if _HUD_QT_TIMER is not None:
+        try:
+            _HUD_QT_TIMER.stop()
+        except Exception as e:
+            stealth_print(f"⚠️ HUD timer close error: {e}")
+        _HUD_QT_TIMER = None
+    if win is not None:
+        try:
+            win.hide()
+        except Exception as e:
+            stealth_print(f"⚠️ HUD close error: {e}")
+    _HUD_QT_THREAD = None
+
+
+def _hud_enqueue_command(action, **payload):
+    """Empile une commande HUD à exécuter sur le thread principal Qt."""
+    _HUD_CMD_QUEUE.put({"action": action, **payload})
+    try:
+        stealth_print(
+            f"🔍 HUD queue push action={action} "
+            f"qsize={_HUD_CMD_QUEUE.qsize()} "
+            f"timer_started={_HUD_CMD_TIMER is not None} "
+            f"window_exists={_HUD_QT_WINDOW is not None} "
+            f"visible={_HUD_VISIBLE}"
+        )
+    except Exception:
+        pass
+
+
+def _hud_process_pending_commands():
+    """Traite les commandes HUD émises depuis d'autres threads."""
+    global _HUD_VISIBLE
+    while True:
+        try:
+            cmd = _HUD_CMD_QUEUE.get_nowait()
+        except queue.Empty:
+            break
+
+        action = cmd.get("action")
+        try:
+            stealth_print(
+                f"🔍 HUD queue pop action={action} "
+                f"timer_started={_HUD_CMD_TIMER is not None} "
+                f"window_exists={_HUD_QT_WINDOW is not None} "
+                f"visible={_HUD_VISIBLE}"
+            )
+        except Exception:
+            pass
+        if action == "show":
+            AUDIO_CONFIG["mini_overlay_enabled"] = True
+            if _HUD_QT_WINDOW is None:
+                _HUD_VISIBLE = True
+                _hud_build_window()
+            else:
+                _HUD_VISIBLE = True
+                try:
+                    _HUD_QT_WINDOW.show()
+                    _HUD_QT_WINDOW.raise_()
+                    _HUD_QT_WINDOW.activateWindow()
+                except Exception as e:
+                    stealth_print(f"⚠️ HUD show error: {e}")
+        elif action == "hide":
+            _hud_close_from_ui()
+        elif action == "move":
+            if _HUD_QT_WINDOW is not None:
+                try:
+                    x = int(cmd.get("x", AUDIO_CONFIG.get("mini_overlay_x", 40)))
+                    y = int(cmd.get("y", AUDIO_CONFIG.get("mini_overlay_y", 40)))
+                    _HUD_QT_WINDOW.move(x, y)
+                    AUDIO_CONFIG["mini_overlay_x"] = x
+                    AUDIO_CONFIG["mini_overlay_y"] = y
+                except Exception as e:
+                    stealth_print(f"⚠️ HUD queued move error: {e}")
+        elif action == "opacity":
+            if _HUD_QT_WINDOW is not None:
+                try:
+                    value = int(cmd.get("value", AUDIO_CONFIG.get("mini_overlay_opacity", 85)))
+                    _HUD_QT_WINDOW.set_opacity(value)
+                    AUDIO_CONFIG["mini_overlay_opacity"] = value
+                except Exception as e:
+                    stealth_print(f"⚠️ HUD queued opacity error: {e}")
+        elif action == "refresh_rows":
+            if _HUD_QT_WINDOW is not None:
+                try:
+                    _HUD_QT_WINDOW.apply_row_visibility()
+                except Exception as e:
+                    stealth_print(f"⚠️ HUD queued row refresh error: {e}")
+
+
+def _hud_start_command_timer():
+    """Démarre le polling Qt des commandes HUD sur le thread principal."""
+    global _HUD_CMD_TIMER
+    try:
+        from PySide6.QtCore import QTimer
+    except Exception as e:
+        stealth_print(f"⚠️ PySide6 erreur QTimer HUD: {e}")
+        return None
+    if _HUD_CMD_TIMER is not None:
+        return _HUD_CMD_TIMER
+
+    timer = QTimer()
+    timer.timeout.connect(_hud_process_pending_commands)
+
+    def start_poll():
+        try:
+            _hud_process_pending_commands()
+        except Exception as e:
+            stealth_print(f"⚠️ HUD initial poll error: {e}")
+        timer.start(100)
+        stealth_print("🔍 HUD command timer started")
+
+    QTimer.singleShot(500, start_poll)
+    _HUD_CMD_TIMER = timer
+    return timer
+
+
+def _create_hud_window_if_enabled():
+    """V5.3: Crée la fenêtre HUD Qt au démarrage puis applique son état visible/caché."""
+    global _HUD_VISIBLE
+    _ensure_hud_qt_app()
+    _hud_start_command_timer()
+    stealth_print(f"🔍 HUD debug: mini_overlay_enabled={AUDIO_CONFIG.get('mini_overlay_enabled')}")
+    if not AUDIO_CONFIG.get("mini_overlay_enabled", False):
+        stealth_print(
+            f"🔍 HUD boot skipped: enabled=False "
+            f"timer_started={_HUD_CMD_TIMER is not None} "
+            f"window_exists={_HUD_QT_WINDOW is not None}"
+        )
+        return None
+    window = _hud_build_window()
+    _HUD_VISIBLE = True
+    return window
 
 
 def check_for_updates():
@@ -13359,7 +11553,7 @@ def update_check_loop():
             check_for_updates()
         except Exception:
             pass
-        time.sleep(3600)
+        _PERF_STOP_EVENT.wait(3600)
 
 def start_server():
     # En mode EXE (Production), on utilise un serveur WSGI robuste
@@ -13549,7 +11743,7 @@ def reset_to_factory():
 try:
     import keyboard
     # Monitoring (F3) : Retour son local
-    keyboard.add_hotkey('f3', toggle_monitoring)
+    if AUDIO_CONFIG.get('hotkey_f3_enabled', True): keyboard.add_hotkey('f3', toggle_monitoring)
     
     # Bypass (F4) : Désactivation de l'IA et passage en direct
     #keyboard.add_hotkey('f4', toggle_bypass_action)
@@ -13564,7 +11758,7 @@ except Exception as e:
 class JSApi:
     def save_audio_config(self, tts_name, listen_name, ptt_key):
         global AUDIO_CONFIG
-
+        
         AUDIO_CONFIG["game_output_device_key"] = _normalize_device_signature(tts_name, "")
         AUDIO_CONFIG["game_input_device_key"] = _normalize_device_signature(listen_name, "")
         AUDIO_CONFIG["game_output_device_runtime"] = _resolve_device_signature(
@@ -13580,94 +11774,13 @@ class JSApi:
         # 🛡️ SÉCURITÉ : On ne doit PAS lier ptt_key à toggle_bypass_action ici !
         try:
             keyboard.unhook_all_hotkeys()
-            keyboard.add_hotkey('f2', toggle_tts_action)
+            if AUDIO_CONFIG.get('hotkey_f2_enabled', True): keyboard.add_hotkey('f2', toggle_tts_action)
             keyboard.add_hotkey('f4', toggle_bypass_action) # Bypass = F4
-            keyboard.add_hotkey('f3', toggle_monitoring_action)
+            if AUDIO_CONFIG.get('hotkey_f3_enabled', True): keyboard.add_hotkey('f3', toggle_monitoring_action)
             keyboard.add_hotkey('f8', panic_reset)
         except: pass
         
         return {"status": "success"}
-        
-@app.route('/toggle', methods=['POST', 'GET'])
-def toggle_app_remote():
-    global app_state
-    # On inverse l'état
-    app_state["is_active"] = not app_state["is_active"]
-    state_str = "ON" if app_state["is_active"] else "OFF"
-    stealth_print(f"🔌 REMOTE : Système basculé sur {state_str}")
-    return jsonify({"ok": True, "state": app_state["is_active"]})
-
-
-
-# 2. BOUTONS FONCTIONS (TURBO & MICRO)
-@app.route('/config/toggle_feature', methods=['POST'])
-def toggle_feature_remote():
-    try:
-        data = request.get_json()
-        feat = data.get('feature')
-        
-        if feat == 'turbo':
-            curr = AUDIO_CONFIG.get("turbo_latency_active", False)
-            AUDIO_CONFIG["turbo_latency_active"] = not curr
-            state_value, detail_value = _module_runtime_defaults("turbo", not curr)
-            _set_module_runtime("turbo", state_value, detail_value)
-            stealth_print(f"🚀 REMOTE : Mode Turbo {'ACTIVÉ' if not curr else 'DÉSACTIVÉ'}")
-            
-        elif feat == 'mic':
-            # is_listening = True veut dire que le micro est OUVERT
-            curr = AUDIO_CONFIG.get("is_listening", True)
-            AUDIO_CONFIG["is_listening"] = not curr
-            state = "OUVERT" if not curr else "MUTÉ"
-            stealth_print(f"🎤 REMOTE : Micro {state}")
-            
-        return jsonify({"ok": True})
-    except Exception as e:
-        stealth_print(f"❌ Erreur Remote Feature: {e}")
-        return jsonify({"ok": False})
-
-# 3. BOUTON GENRE (HOMME/FEMME)
-@app.route('/config/gender_update', methods=['POST'])
-def update_gender_remote():
-    try:
-        data = request.get_json()
-        new_gender = data.get('gender', 'MALE') # Par défaut MALE
-        app_state["gender"] = new_gender
-        
-        # Mise à jour immédiate de la voix
-        current_lang = AUDIO_CONFIG.get("target_lang", "EN")
-        gender_key = "F" if new_gender == "FEMALE" else "M"
-        
-        new_voice = None
-        if current_lang in EDGE_VOICE_MAP:
-            new_voice = EDGE_VOICE_MAP[current_lang].get(gender_key)
-        elif current_lang.lower() in EDGE_VOICE_MAP:
-             new_voice = EDGE_VOICE_MAP[current_lang.lower()].get(gender_key)
-            
-        if new_voice:
-            AUDIO_CONFIG["edge_voice"] = new_voice
-            app_state["windows_voice_name"] = new_voice
-            stealth_print(f"🚻 REMOTE : Genre changé en {new_gender} ({new_voice})")
-        
-        save_settings()
-        return jsonify({"ok": True})
-    except Exception as e:
-        stealth_print(f"❌ Erreur Remote Gender: {e}")
-        return jsonify({"ok": False})
-
-# 4. BOUTON PANIC (RESET)
-@app.route('/panic', methods=['GET', 'POST'])
-def panic_remote():
-    stealth_print("🚨 REMOTE : PANIC RESET DÉCLENCHÉ !")
-    global DG_ENGINE
-    if DG_ENGINE:
-        DG_ENGINE.is_running = False
-        time.sleep(1)
-        # Redémarrage propre
-        DG_ENGINE = DeepgramEngine()
-        t = threading.Thread(target=DG_ENGINE.start_streaming, args=(AUDIO_CONFIG["input_device"],))
-        t.daemon = True
-        t.start()
-    return jsonify({"ok": True})
 
 # --- FONCTIONS DES TOUCHES ---
 
@@ -13846,6 +11959,129 @@ class Bridge:
         stealth_print("INFO: Moteur legacy retire, update_voice_id ignore.")
         return False
 
+    def show_hud(self):
+        """V5.3: Ouvre le HUD Qt transparent."""
+        try:
+            _hud_enqueue_command("show")
+            AUDIO_CONFIG["mini_overlay_enabled"] = True
+            stealth_print("✅ HUD Qt demandé (Bridge.show_hud)")
+            return True
+        except Exception as e:
+            stealth_print(f"⚠️ Bridge.show_hud erreur: {e}")
+            return False
+
+    def hide_hud(self):
+        """V5.3: Ferme le HUD Qt."""
+        try:
+            _hud_enqueue_command("hide")
+            stealth_print("✅ HUD Qt masquage demandé (Bridge.hide_hud)")
+            return True
+        except Exception as e:
+            stealth_print(f"⚠️ Bridge.hide_hud erreur: {e}")
+            return False
+
+_tts_blueprint = register_tts_module(
+    ALL_EDGE_VOICES=ALL_EDGE_VOICES,
+    AUDIO_CONFIG=AUDIO_CONFIG,
+    CURRENT_TARGET_LANG_GETTER=lambda: CURRENT_TARGET_LANG,
+    FALLBACK_VOICES=FALLBACK_VOICES,
+    LAST_USER_AUDIO_BUFFER_GETTER=lambda: LAST_USER_AUDIO_BUFFER,
+    PRESET_VOICE_BUFFER_GETTER=lambda: PRESET_VOICE_BUFFER,
+    VOICE_CLOUD_LIMIT_STATE=VOICE_CLOUD_LIMIT_STATE,
+    _HTTP=_HTTP,
+    _build_kommz_generate_candidates=_build_kommz_generate_candidates,
+    _build_kommz_synthesis_candidates=_build_kommz_synthesis_candidates,
+    _get_hybrid_rts_preset=_get_hybrid_rts_preset,
+    _get_voice_library=_get_voice_library,
+    _gpt_style_to_xtts_ref_bytes=_gpt_style_to_xtts_ref_bytes,
+    _hybrid_style_ref_cache=_hybrid_style_ref_cache,
+    _is_hybrid_supported_target_lang=_is_hybrid_supported_target_lang,
+    _is_trial_voice_mode_enabled=_is_trial_voice_mode_enabled,
+    _is_turbo_mode_active=_is_turbo_mode_active,
+    _last_xtts_activity_ts_SETTER=lambda value: globals().__setitem__("_last_xtts_activity_ts", value),
+    _looks_like_cloud_trial_limit=_looks_like_cloud_trial_limit,
+    _normalize_voice_library_entry=_normalize_voice_library_entry,
+    _normalize_xtts_request_lang=_normalize_xtts_request_lang,
+    _register_tts_fallback=_register_tts_fallback,
+    _repair_display_text=_repair_display_text,
+    _resolve_kommz_synthesis_base=_resolve_kommz_synthesis_base,
+    _resolve_kommz_voice_endpoint=_resolve_kommz_voice_endpoint,
+    _set_hybrid_fast_runtime=_set_hybrid_fast_runtime,
+    _set_pipeline_runtime=_set_pipeline_runtime,
+    _set_voice_active_id=_set_voice_active_id,
+    _short_runtime_text=_short_runtime_text,
+    _short_runtime_url=_short_runtime_url,
+    _to_bool=_to_bool,
+    _wav_duration_seconds=_wav_duration_seconds,
+    add_subtitle=add_subtitle,
+    has_voice_license=has_voice_license,
+    os=os,
+    prewarm_kommz_xtts=prewarm_kommz_xtts,
+    requests=requests,
+    resample_and_play=resample_and_play,
+    save_settings=save_settings,
+    threading=threading,
+)
+app.register_blueprint(_tts_blueprint)
+
+
+_stt_blueprint = register_stt_module(
+    AUDIO_CONFIG=AUDIO_CONFIG,
+    COMMUNITY_EDITION=COMMUNITY_EDITION,
+    DEEPGRAM_API_KEY=DEEPGRAM_API_KEY,
+    LICENSE_MGR=LICENSE_MGR,
+    LAST_USER_AUDIO_BUFFER_SETTER=lambda value: globals().__setitem__("LAST_USER_AUDIO_BUFFER", value),
+    _is_turbo_mode_active=_is_turbo_mode_active,
+    _push_quality_log=_push_quality_log,
+    _record_latency=_record_latency,
+    _reinforce_laugh_transcript=_reinforce_laugh_transcript,
+    _set_module_runtime=_set_module_runtime,
+    _set_pipeline_runtime=_set_pipeline_runtime,
+    _transcribe_via_modal_whisper=_transcribe_via_modal_whisper,
+    clean_gaming_text=clean_gaming_text,
+    enqueue_user_pipeline=enqueue_user_pipeline,
+    io=io,
+    np=np,
+    re=re,
+    requests=requests,
+    resolve_input_device_cfg=resolve_input_device_cfg,
+    sd=sd,
+    soundfile=soundfile,
+    stealth_print=stealth_print,
+    time=time,
+    _ptt_chunks_GETTER=lambda: _ptt_chunks,
+    _ptt_chunks_SETTER=lambda value: globals().__setitem__("_ptt_chunks", value),
+    _ptt_last_start_ts_GETTER=lambda: _ptt_last_start_ts,
+    _ptt_last_start_ts_SETTER=lambda value: globals().__setitem__("_ptt_last_start_ts", value),
+    _ptt_last_stop_ts_GETTER=lambda: _ptt_last_stop_ts,
+    _ptt_last_stop_ts_SETTER=lambda value: globals().__setitem__("_ptt_last_stop_ts", value),
+    _ptt_lock_GETTER=lambda: _ptt_lock,
+    _ptt_preroll_GETTER=lambda: _ptt_preroll,
+    _ptt_rec_GETTER=lambda: _ptt_rec,
+    _ptt_rec_SETTER=lambda value: globals().__setitem__("_ptt_rec", value),
+    _ptt_stream_GETTER=lambda: _ptt_stream,
+    _ptt_stream_SETTER=lambda value: globals().__setitem__("_ptt_stream", value),
+    _ptt_stream_device_GETTER=lambda: _ptt_stream_device,
+    _ptt_stream_device_SETTER=lambda value: globals().__setitem__("_ptt_stream_device", value),
+)
+app.register_blueprint(_stt_blueprint)
+register_scenes_runtime(
+    AUDIO_CONFIG=AUDIO_CONFIG,
+    _get_scene_library=_get_scene_library,
+    logger=logger,
+)
+app.register_blueprint(privacy_bp)
+app.register_blueprint(license_bp)
+app.register_blueprint(overlay_bp)
+app.register_blueprint(listen_bp)
+app.register_blueprint(remote_bp)
+app.register_blueprint(guide_bp)
+app.register_blueprint(scenes_bp)
+app.register_blueprint(config_bp)
+app.register_blueprint(ui_bp)
+app.register_blueprint(audio_bp)
+app.register_blueprint(cloud_bp)
+
 # ==================== MAIN CORRIGÉ & COMPLET ====================
 if __name__ == "__main__":
     # V5.2: Mode debug / trace via CLI
@@ -13888,6 +12124,14 @@ if __name__ == "__main__":
     startup_trace("main: load_settings begin")
     load_settings()
     startup_trace("main: load_settings done")
+    # Réhydrate immédiatement LICENSE_MGR / VOICE_LICENSE_MGR depuis la config
+    # persistée pour que /status réponde "activé" dès le 1er poll JS.
+    startup_trace("main: sync_license_mgr begin")
+    try:
+        sync_license_mgr_from_config()
+        startup_trace("main: sync_license_mgr done")
+    except Exception as _e:
+        startup_trace(f"main: sync_license_mgr failed: {_e}")
     # V5.2: Vérification immédiate des mises à jour au lancement (avant le thread périodique)
     try:
         check_for_updates()
@@ -13940,12 +12184,16 @@ if __name__ == "__main__":
     AUDIO_CONFIG["is_listening"] = True
     AUDIO_CONFIG["monitoring_enabled"] = True
     AUDIO_CONFIG["tts_active"] = True
+    stealth_print(f"🔍 PRE-SAVE: mini_overlay_enabled={AUDIO_CONFIG.get('mini_overlay_enabled')}")
     save_settings()
     
     # 2. VÉRIFICATION INTELLIGENTE DU PÉRIPHÉRIQUE (SORTIE)
-    saved_out_sig = AUDIO_CONFIG.get("game_output_device_key") or AUDIO_CONFIG.get("game_output_device")
-    saved_out = _resolve_device_signature(saved_out_sig, as_output=True)
-    if saved_out is None:
+    try:
+        saved_out = int(AUDIO_CONFIG.get("game_output_device", 0))
+    except:
+        saved_out = 0
+        AUDIO_CONFIG["game_output_device"] = 0
+    if saved_out == 0:
         stealth_print("🔍 Premier lancement ? Recherche auto CABLE Input...")
         found_cable = None
         try:
@@ -13954,33 +12202,32 @@ if __name__ == "__main__":
                     found_cable = i
                     break
             if found_cable is not None:
-                AUDIO_CONFIG["game_output_device_runtime"] = _device_runtime_payload(found_cable)
+                AUDIO_CONFIG["game_output_device"] = found_cable
                 stealth_print(f"✅ Câble trouvé et configuré sur ID {found_cable}")
                 save_settings()
         except: pass
     else:
-        AUDIO_CONFIG["game_output_device_runtime"] = saved_out
-        stealth_print(f"✅ Chargement Sortie sauvegardée : ID {saved_out['index']}")
+        stealth_print(f"✅ Chargement Sortie sauvegardée : ID {saved_out}")
 
     # 3. VÉRIFICATION DU MICRO (ne pas écraser la config utilisateur)
-    in_sig = AUDIO_CONFIG.get("game_input_device_key") or AUDIO_CONFIG.get("game_input_device")
-    in_resolved = _resolve_device_signature(in_sig, as_output=False)
-    in_id = in_resolved["index"] if in_resolved else None
+    in_id = resolve_input_device_cfg(AUDIO_CONFIG.get("game_input_device"))
     if in_id is None:
         in_id = resolve_input_device_cfg(sd.default.device[0])
     if in_id is None:
         select_microphone_at_startup()
-        in_resolved = AUDIO_CONFIG.get("game_input_device_runtime") or {}
-        in_id = in_resolved.get("index")
+        in_id = resolve_input_device_cfg(AUDIO_CONFIG.get("game_input_device"))
     if in_id is None:
         in_id = 0
+    AUDIO_CONFIG["game_input_device_key"] = _normalize_device_signature(
+        sd.query_devices()[int(in_id)].get("name", ""),
+        str(sd.query_hostapis()[int(sd.query_devices()[int(in_id)].get("hostapi", -1))].get("name", "")) if int(sd.query_devices()[int(in_id)].get("hostapi", -1)) >= 0 else ""
+    )
     AUDIO_CONFIG["game_input_device_runtime"] = _device_runtime_payload(in_id)
 
-    stealth_print(f"✅ START: Micro {in_id} | Sortie Jeu {AUDIO_CONFIG.get('game_output_device_key')}")
+    stealth_print(f"✅ START: Micro {in_id} | Sortie Jeu {AUDIO_CONFIG.get('game_output_device')}")
 
     # 4. LANCEMENT DES THREADS
     try:
-        import threading
         # Serveur local déjà amorcé plus haut pour garantir l'ouverture de l'UI.
         
         # Moteur Espion Deepgram
@@ -13998,13 +12245,13 @@ if __name__ == "__main__":
                         try:
                             if "DG_ENGINE" in globals() and DG_ENGINE:
                                 DG_ENGINE.is_running = False
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            stealth_print(f"⚠️ Kick écoute: arrêt logique DG_ENGINE impossible : {e}")
                         time.sleep(0.35)
                         globals()["DG_ENGINE"] = DeepgramEngine()
                         threading.Thread(target=globals()["DG_ENGINE"].start_streaming, args=(in_id,), daemon=True).start()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        stealth_print(f"⚠️ Kick écoute startup échoué : {e}")
 
                 threading.Thread(target=_kick_listen_startup, daemon=True).start()
 
@@ -14021,6 +12268,8 @@ if __name__ == "__main__":
         threading.Thread(target=update_check_loop, daemon=True).start()
         # V5.2 Bloc 4: Mini overlay desktop stats
         threading.Thread(target=mini_stats_overlay_loop, daemon=True).start()
+        # V5.3: Préparer le HUD Qt sur le thread principal (AVANT webview.start)
+        _create_hud_window_if_enabled()
         # V5.2 Bloc 6: Tray icon sante (vert/jaune/rouge)
         if AUDIO_CONFIG.get("tray_icon_enabled", True):
             threading.Thread(target=_tray_icon_loop, daemon=True).start()
@@ -14032,8 +12281,8 @@ if __name__ == "__main__":
         import keyboard
         try: keyboard.unhook_all()
         except: pass
-        keyboard.add_hotkey('f2', toggle_tts_action, suppress=False)        
-        keyboard.add_hotkey('f3', toggle_monitoring_action, suppress=False) 
+        if AUDIO_CONFIG.get('hotkey_f2_enabled', True): keyboard.add_hotkey('f2', toggle_tts_action, suppress=False)
+        if AUDIO_CONFIG.get('hotkey_f3_enabled', True): keyboard.add_hotkey('f3', toggle_monitoring_action, suppress=False)
         keyboard.add_hotkey('f4', toggle_bypass_action, suppress=False)     
         keyboard.add_hotkey('f8', panic_reset, suppress=False)              
         # V5.2: Raccourcis globaux toggle écoute + cycle presets
@@ -14109,10 +12358,15 @@ if __name__ == "__main__":
         resizable=True,
         js_api=api_bridge # Active le lien JS->Python
     )
-    
+
     try:
         # Forcer explicitement le backend réduit les échecs silencieux en EXE.
         startup_trace("main: entering webview.start(edgechromium)")
+        # V5.3: Force la transparence EdgeChromium (nécessaire pour HUD frameless)
+        os.environ.setdefault(
+            'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',
+            '--disable-gpu-compositing --enable-transparent-visuals'
+        )
         webview.start(debug=False, gui="edgechromium")
     except Exception as e:
         startup_trace(f"main: webview.start exception: {e}")

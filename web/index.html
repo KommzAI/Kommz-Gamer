@@ -1677,7 +1677,6 @@
 
         </div>
       </div>
-
       <div class="card" style="border-color:#a855f7; margin-top:20px;">
         <label style="color:#a855f7;">⚡ HUD Flottant (Info Runtime)</label>
         <p style="font-size:11px; color:var(--muted); margin-bottom:12px;">
@@ -3645,7 +3644,12 @@
         return r.json();
     }
     async function maybeAutoActivateTrial(d, desktopActivated, voiceActivated) {
+        /** FIX V5.3 : Auto-activation désactivée — l'essai 24h ne s'active plus automatiquement
+         * sur email. L'utilisateur doit activer manuellement via le bouton "Activer l'essai" 
+         * OU mettre ses clés VTP/VCV. Cela permet de contourner le conflit où l'essai s'activait
+         * avant que les clés de licence puissent être validées. */
         if (IS_COMMUNITY_MODE || autoTrialActivationInFlight || d?.trial_mode === true) return false;
+        return false; // FIX V5.3 : désactiver complètement l'auto-activation
         if (desktopActivated || voiceActivated) return false;
         const email = normalizeEmail(d?.license_email || getGateEmail());
         if (!isValidEmail(email) || email === autoTrialLastEmailAttempt) return false;
@@ -6128,23 +6132,51 @@
 				
 		
 		// --- CODE À RAJOUTER POUR SAUVEGARDER L'AUDIO ---
-        qs('#btnSaveAudioConfig').onclick = async () => {
-            lastModClickTime = Date.now();
-            const out = qs('#selGameOutput').value;
-            const inc = qs('#selGameInput').value;
-            const ttsVolume = (Number(qs('#rngTtsVolume')?.value || 100) / 100);
-            
-            if(!out || !inc) return showToast("⚠️ Sélectionnez les deux périphériques");
+		async function saveAudioConfig() {
+		    lastModClickTime = Date.now();
+		    const out = qs('#selGameOutput').value;
+		    const inc = qs('#selGameInput').value;
+		    const ttsVolume = (Number(qs('#rngTtsVolume')?.value || 100) / 100);
 
-            const r = await fetch(CORE_URL + '/audio/config', { 
-                method: 'POST', 
-                headers: {'Content-Type':'application/json'}, 
-                body: JSON.stringify({ game_output_index: out, game_input_index: inc, tts_volume: ttsVolume }) 
-            });
-            
-            if(r.ok) showToast("✅ Configuration audio sauvegardée");
-            else showToast("❌ Erreur lors de la sauvegarde");
-        };
+		    if(!out || !inc) return;
+
+		    // 🔥 FIX PERSISTENCE : envoyer aussi les clés canoniques construites
+		    // depuis le nom du device pour que le serveur puisse résoudre + persister.
+		    const outKey = (() => {
+		        const sel = qs('#selGameOutput');
+		        if (sel && sel.selectedOptions.length > 0)
+		            return sel.selectedOptions[0].textContent.trim();
+		        return '';
+		    })();
+		    const inKey = (() => {
+		        const sel = qs('#selGameInput');
+		        if (sel && sel.selectedOptions.length > 0)
+		            return sel.selectedOptions[0].textContent.trim();
+		        return '';
+		    })();
+
+		    try {
+		        const r = await fetch(CORE_URL + '/audio/config', {
+		            method: 'POST',
+		            headers: {'Content-Type':'application/json'},
+		            body: JSON.stringify({ game_output_index: out, game_input_index: inc, game_output_key: outKey, game_input_key: inKey, tts_volume: ttsVolume })
+		        });
+		        if(r.ok) showToast("✅ Configuration audio sauvegardée");
+		        else showToast("❌ Erreur lors de la sauvegarde");
+		    } catch(e) {
+		        console.error('saveAudioConfig error:', e);
+		        showToast("❌ Erreur JS: " + e.message);
+		    }
+		}
+
+		// 🔥 FIX UX : persister automatiquement dès le changement du device ou du volume
+		// (sinon le polling /status réinitialise la sélection 2-3s après).
+		if (qs('#selGameOutput')) qs('#selGameOutput').addEventListener('change', saveAudioConfig);
+		if (qs('#selGameInput')) qs('#selGameInput').addEventListener('change', saveAudioConfig);
+		if (qs('#rngTtsVolume')) qs('#rngTtsVolume').addEventListener('input', () => { lastModClickTime = Date.now(); saveAudioConfig(); });
+
+		// Bouton Sauvegarder (explicite) — appelle la même fonction
+		qs('#btnSaveAudioConfig').onclick = saveAudioConfig;
 
         const ttsVolumeSlider = qs('#rngTtsVolume');
         const ttsVolumeLabel = qs('#lblTtsVolume');
