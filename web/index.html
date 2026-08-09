@@ -7476,7 +7476,7 @@ async function syncMiniOverlayToggle() {
         const r = await fetch(CORE_URL + '/status');
         const d = await r.json().catch(() => ({}));
         const cb = qs('#chkMiniOverlay');
-        if (cb) cb.checked = d.mini_overlay_enabled !== false;
+        if (cb) cb.checked = d.mini_overlay_enabled === true;
         const hint = qs('#miniOverlayHint');
         if (hint) hint.style.display = 'none';
     } catch (_) {}
