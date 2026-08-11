@@ -24,18 +24,19 @@ from pathlib import Path
 _BASE_DIR = Path(__file__).parent.parent.parent
 
 def _get_persistent_config_dir() -> Path:
-    """Retourne le répertoire de configuration persistant (APPDATA).
-    En mode buildé (PyInstaller frozen OU Nuitka __compiled__),
-    on utilise %LOCALAPPDATA%\\KommzGamer pour la persistance réelle."""
+    """F5: En mode compilé → dossier de l'exe (dist/).
+    En mode source → dossier du projet (_BASE_DIR).
+    Ainsi settings.private.json est créé à côté du .exe —
+    visible et persistant entre les lancements, portable."""
     is_compiled = (
         getattr(sys, "frozen", False)       # PyInstaller
         or getattr(sys, "__compiled__", False)  # Nuitka (onefile + standalone)
         or "__compiled__" in dir(sys)           # Nuitka fallback
     )
     if is_compiled:
-        appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "KommzGamer"
+        # Dossier contenant l'exe (dist/) — settings.json suiv  le exe
+        exe_dir = Path(sys.executable).parent
+        return exe_dir
     return _BASE_DIR
 
 def _resolve_config_file() -> Path:
@@ -59,33 +60,46 @@ def _resolve_config_file() -> Path:
         p = config_dir / env_file
         if p.exists():
             return p
-    # --- FIX EXEmode : migration forcée vers le dossier persistant ---
-    # search_dirs : _MEIPSS (via _BASE_DIR ou sys._MEIPASS) + exe dir + config_dir
+    # --- FIX EXE mode: migration forcée vers le dossier persistant ---
+    # search_dirs : exe_dir (PRIORITÉ!) + _MEIPSS (via _BASE_DIR) + config_dir
     search_dirs = [_BASE_DIR]
     if getattr(sys, "frozen", False):
-        # _MEIPSS contient les data files inclus (settings.private.json via --include-data-files)
+        # V5.4: exe_dir en 1er pour utiliser settings.json placé
+        # à côté du .exe (mode portable). Cela permet au client de
+        # déplacer le logiciel et que settings.json suive.
+        try:
+            exe_dir = Path(sys.executable).resolve().parent
+            if exe_dir not in search_dirs:
+                search_dirs.insert(0, exe_dir)  # PRIORITÉ ABSOLUE
+        except Exception:
+            pass
+        # _MEIPSS contient les data files inclus si --include-data-files utilisé
         meipass = getattr(sys, "_MEIPASS", "")
         if meipass:
             mp = Path(meipass)
             if mp not in search_dirs:
                 search_dirs.append(mp)
-        try:
-            exe_dir = Path(sys.executable).resolve().parent
-            if exe_dir not in search_dirs:
-                search_dirs.append(exe_dir)
-        except Exception:
-            pass
-    legacy_files = ["settings.private.json", "settings.json"]
+    # V5.4: Priorité au template settings.json pour distribution client.
+    # settings.json = template propre (sans clés dev) inclus dans le build.
+    # settings.private.json = utilisé en source (dév) uniquement.
+    # En compilé, on migre toujours vers settings.private.json (persistance).
+    # En source, on garde le même nom (settings.private.json prioritaire).
+    is_frozen = getattr(sys, "frozen", False)
+    if is_frozen:
+        legacy_files = ["settings.json", "settings.private.json"]
+    else:
+        legacy_files = ["settings.private.json", "settings.json"]
     # Si on est en frozen (buildé) : on copie toujours depuis la source livrée
     # (MEIPSS/exe) vers le dossier persistant, même si un settings persistant
     # existe déjà — on ne veut JAMAIS lire/écrire depuis _MEIPSS (lecture seule).
-    is_frozen = getattr(sys, "frozen", False)
     for fname in legacy_files:
         for base in search_dirs:
             legacy = base / fname
             if not legacy.exists():
                 continue
-            dest = config_dir / fname
+            # V5.4: toujours migrer vers settings.private.json (nom persistant unifié)
+            dest_name = "settings.private.json" if is_frozen else fname
+            dest = config_dir / dest_name
             if not dest.exists():
                 try:
                     config_dir.mkdir(parents=True, exist_ok=True)
@@ -108,6 +122,17 @@ def _resolve_config_file() -> Path:
             dest.write_text("{}", encoding="utf-8")
     except Exception as e:
         print(f"⚠️ Config dir create error: {e}", file=sys.stderr, flush=True)
+    # V5.4: En frozen, créer un template settings.json à côté du .exe
+    # si aucun n'existe — pour prochaine utilisation portable
+    if is_frozen:
+        try:
+            exe_dir = Path(sys.executable).resolve().parent
+            template = exe_dir / "settings.json"
+            if not template.exists():
+                exe_dir.mkdir(parents=True, exist_ok=True)
+                template.write_text("{}", encoding="utf-8")
+        except Exception as e:
+            print(f"⚠️ Config template create error: {e}", file=sys.stderr, flush=True)
     return dest
 
 CONFIG_FILE = _resolve_config_file()
@@ -138,7 +163,7 @@ CLOUD_FEATURES_ENABLED = str(
 # ============================================================================
 
 DEFAULT_KOMMZ_VOICE_URL = "https://kommzvoice.onrender.com"
-DEFAULT_KOMMZ_SYNTHESIS_URL = "https://kommzvoice.onrender.com"
+DEFAULT_KOMMZ_SYNTHESIS_URL = "https://kommz-innovations--kommz-voice-gptsovits-tts.modal.run"
 DEFAULT_KOMMZ_WHISPER_URL = "https://kommzvoice.onrender.com"
 DEFAULT_KOMMZ_HEALTH_URL = "https://kommzvoice.onrender.com/health"
 DEFAULT_KOMMZ_WARMUP_URL = "https://kommzvoice.onrender.com/warmup"
