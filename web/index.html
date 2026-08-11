@@ -1710,7 +1710,7 @@
         <!-- Toggle + opacité -->
         <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
           <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0; text-transform:none; font-size:13px; font-weight:700; color:var(--text);">
-            <input type="checkbox" id="hudToggle" onchange="toggleExternalHUD(this.checked)" style="transform:scale(1.2);">
+            <input type="checkbox" id="hudToggle" onchange="toggleExternalHUD(this.checked); setMiniOverlay(this.checked);" style="transform:scale(1.2);">
             Activer le HUD (fenêtre externe)
           </label>
           <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:180px;">
@@ -2289,6 +2289,7 @@
     let lastModClickTime = 0;
     let isManuallyChanging = false;
     let kommzIdDirty = false;
+    let kommzKeyDirty = false;
     let hybridDirty = false;
     let xttsConfigDirty = false;
     let hybridAdvancedOpen = false;
@@ -3784,25 +3785,49 @@
         document.getElementById(tabId).classList.add('active');
         document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
         if(event) event.currentTarget.classList.add('active');
+
+        // --- FIX 4: Cacher les config cards (Fish/Kommz/Edge) quand on quitte tab-ai ---
+        if (tabId !== 'tab-ai') {
+            qs('#divEdgeConfig')?.classList.add('hidden');
+            qs('#divKommzConfig')?.classList.add('hidden');
+            qs('#divFishConfig')?.classList.add('hidden');
+        }
+
         // HUD visible uniquement dans tab-overlay
-        const hudToggle = document.getElementById('hudToggle');
-        if (hudToggle && hudToggle.checked) {
-            if (tabId === 'tab-overlay') {
+        if (tabId === 'tab-overlay') {
+            const hudToggle = document.getElementById('hudToggle');
+            if (hudToggle && hudToggle.checked) {
                 toggleExternalHUD(true);
-            } else {
-                toggleExternalHUD(false);
             }
+        } else {
+            // Cache le HUD Qt sans changer mini_overlay_enabled
+            // Retry avec délai car pywebview.api peut ne pas
+            // être prêt immédiatement en mode compilé Nuitka
+            const tryHide = (attempts) => {
+                try {
+                    if (window.pywebview && window.pywebview.api
+                        && typeof window.pywebview.api.hide_hud === 'function') {
+                        window.pywebview.api.hide_hud();
+                    } else if (attempts > 0) {
+                        setTimeout(() => tryHide(attempts - 1), 300);
+                    }
+                } catch(_) {
+                    if (attempts > 0) setTimeout(() => tryHide(attempts - 1), 300);
+                }
+            };
+            tryHide(5);
         }
     }
 
     function updateUIBasedOnEngine(engine) {
-        qs('#divEdgeConfig').classList.add('hidden');
-        qs('#divKommzConfig').classList.add('hidden');
-        qs('#divFishConfig').classList.add('hidden');
+        // FIX 4c: Always hide ALL config cards first (ensures proper tab isolation)
+        qs('#divEdgeConfig')?.classList.add('hidden');
+        qs('#divKommzConfig')?.classList.add('hidden');
+        qs('#divFishConfig')?.classList.add('hidden');
 
-        if (engine === 'WINDOWS') qs('#divEdgeConfig').classList.remove('hidden');
-        else if (engine === 'KOMMZ_VOICE') qs('#divKommzConfig').classList.remove('hidden');
-        else if (engine === 'FISH_AUDIO') qs('#divFishConfig').classList.remove('hidden');
+        if (engine === 'WINDOWS') qs('#divEdgeConfig')?.classList.remove('hidden');
+        else if (engine === 'KOMMZ_VOICE') qs('#divKommzConfig')?.classList.remove('hidden');
+        else if (engine === 'FISH_AUDIO') qs('#divFishConfig')?.classList.remove('hidden');
     }
 
     function applyVoiceLock(locked) {
@@ -4495,7 +4520,7 @@
 				
 				// Sync Kommz (Key & ID seulement)
                 const kKey = qs('#cfgKommzKey');
-                if (kKey && d.kommz_key && kKey.value !== d.kommz_key && document.activeElement !== kKey) kKey.value = d.kommz_key;
+                if (kKey && d.kommz_key && !kommzKeyDirty && kKey.value !== d.kommz_key && document.activeElement !== kKey) kKey.value = d.kommz_key;
 
                 const kID = qs('#cfgKommzID');
                 if (kID && d.kommz_id && !kommzIdDirty && kID.value !== d.kommz_id && document.activeElement !== kID) kID.value = d.kommz_id;
@@ -4795,6 +4820,23 @@
                 if (activationDoneInfo) activationDoneInfo.style.display = allActivated ? 'block' : 'none';
                 updateLicenseGateUI(d, desktopActivated, voiceActivated);
 
+                // V5.4: Sync Fish Audio config from backend
+                const fishKey = qs('#cfgFishApiKey');
+                if (fishKey && d.fish_api_key !== undefined && document.activeElement !== fishKey) fishKey.value = d.fish_api_key;
+                const fishVoice = qs('#cfgFishVoiceId');
+                if (fishVoice && d.fish_voice_id !== undefined && document.activeElement !== fishVoice) fishVoice.value = d.fish_voice_id;
+
+                // Auto-select Fish Audio engine if key is present and engine is not already FISH_AUDIO
+                // FIX 4b: Only modify selEngine value when tab-ai is active, so it
+                // doesn't interfere with other tabs
+                if (d.fish_api_key && d.tts_engine !== 'FISH_AUDIO') {
+                    // Only update UI section visibility if tab-ai is active
+                    if (document.querySelector('#tab-ai.section.active')) {
+                        if (qs('#selEngine')) qs('#selEngine').value = 'FISH_AUDIO';
+                        updateUIBasedOnEngine('FISH_AUDIO');
+                    }
+                }
+
                 if(d.ptt_key) qs('#currentHotkeyLabel').textContent = d.ptt_key.toUpperCase();
                 
                 // État du Micro
@@ -4965,6 +5007,10 @@
         if (kommzIdInput) {
             kommzIdInput.addEventListener('input', () => { kommzIdDirty = true; });
         }
+        const kommzKeyInput = qs('#cfgKommzKey');
+        if (kommzKeyInput) {
+            kommzKeyInput.addEventListener('input', () => { kommzKeyDirty = true; });
+        }
         ['#cfgXttsPreset', '#cfgTopK', '#cfgTopP', '#cfgRepetitionPenalty', '#cfgLengthPenalty', '#cfgEnableTextSplitting', '#cfgGptCondLen', '#cfgGptCondChunkLen', '#cfgMaxRefLen', '#cfgSoundNormRefs', '#cfgKommzSpeed', '#cfgExpressiveSounds', '#cfgExpressiveProfile', '#cfgExpressiveTranscriptMode', '#cfgExpressiveTtsMode', '#cfgExpressiveIntensityMode', '#cfgExpressiveNoiseMode', '#cfgExpressiveXttsMode', '#cfgExpressiveHybridMode', '#cfgExpressiveStabilityMode', '#cfgExpressiveFallbackGuard', '#cfgExpressivePttMode', '#cfgExpressiveRtsMode'].forEach(id => {
             const el = qs(id);
             if (!el) return;
@@ -5033,8 +5079,9 @@
             showToast("🗣️ Voix sélectionnée");
         };
 
+        const needsVoiceLicense = ['KOMMZ_VOICE', 'FISH_AUDIO'];
         qs('#selEngine').onchange = async (e) => {
-            if (e.target.value === 'KOMMZ_VOICE' && ((!CLOUD_FEATURES_ENABLED) || (!voiceLicensed && !FORCE_UNLOCK_VOICE))) {
+            if (needsVoiceLicense.includes(e.target.value) && ((!CLOUD_FEATURES_ENABLED) || (!voiceLicensed && !FORCE_UNLOCK_VOICE))) {
                 showToast(!CLOUD_FEATURES_ENABLED ? "🧩 Édition Community: cloud désactivé" : "🔒 Licence Voice requise");
                 e.target.value = 'WINDOWS';
                 updateUIBasedOnEngine('WINDOWS');
@@ -6498,6 +6545,7 @@
             if(d.ok) {
                 if (d.saved_id && qs('#cfgKommzID')) qs('#cfgKommzID').value = d.saved_id;
                 kommzIdDirty = false;
+                kommzKeyDirty = false;
                 hybridDirty = false;
                 xttsConfigDirty = false;
                 updateHybridUiState(d);
@@ -6600,9 +6648,11 @@
                 return true;
             }
             if (!silentMode) showToast(`❌ Sauvegarde hybride: ${d.error || 'échec'}`);
+            hybridDirty = false;
             return false;
         } catch (_e) {
             if (!silentMode) showToast("❌ Sauvegarde hybride indisponible");
+            hybridDirty = false;
             return false;
         }
     }
@@ -7318,10 +7368,9 @@ function wireV53Buttons() {
                     _hudWin.focus();
                 }
             }
-            fetch(CORE_URL + '/audio/config', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mini_overlay_enabled: true })
-            }).catch(() => {});
+            // FIX 5: Do NOT send mini_overlay_enabled=true here — the checkbox
+            // sync in showTab() and the hudToggle onchange handler manage this.
+            // This prevents double-sync and config corruption.
             return;
         }
 
@@ -7329,10 +7378,6 @@ function wireV53Buttons() {
             _hudHideDebounceTimer = null;
             try { window.pywebview.api.hide_hud(); } catch(_) {}
             if (_hudWin && !_hudWin.closed) { _hudWin.close(); _hudWin = null; }
-            fetch(CORE_URL + '/audio/config', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mini_overlay_enabled: false })
-            }).catch(() => {});
         }, 2000);
     };
 
@@ -7485,7 +7530,7 @@ function wireV53Buttons() {
         }
     };
 
-    // ── Boot ─────────────────────────────────────────────────
+    // ── Boot ──────────────────────────────────────────────────
     window.addEventListener('load', () => {
         // Sync checkbox depuis le backend uniquement
         fetch(CORE_URL + '/status', { cache: 'no-store' })
@@ -7493,6 +7538,17 @@ function wireV53Buttons() {
             .then(d => {
                 const cb = document.getElementById('hudToggle');
                 if (cb) cb.checked = !!d.mini_overlay_enabled;
+                // FIX 3c: Sync HUD visibility with current active tab on load.
+                // If we're NOT on tab-overlay, hide the external HUD window
+                // without modifying mini_overlay_enabled.
+                const activeTab = document.querySelector('.section.active');
+                if (activeTab && activeTab.id !== 'tab-overlay') {
+                    try {
+                        if (window.pywebview && window.pywebview.api) {
+                            window.pywebview.api.hide_hud();
+                        }
+                    } catch(_) {}
+                }
             })
             .catch(() => {});
     });
