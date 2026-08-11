@@ -84,7 +84,7 @@ def _resolve_config_file() -> Path:
     # settings.private.json = utilisé en source (dév) uniquement.
     # En compilé, on migre toujours vers settings.private.json (persistance).
     # En source, on garde le même nom (settings.private.json prioritaire).
-    is_frozen = getattr(sys, "frozen", False)
+    is_frozen = bool(getattr(sys, "frozen", False) or getattr(sys, "__compiled__", False) or "__compiled__" in dir(sys))
     if is_frozen:
         legacy_files = ["settings.json", "settings.private.json"]
     else:
