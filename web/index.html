@@ -4830,8 +4830,10 @@
                 // FIX 4b: Only modify selEngine value when tab-ai is active, so it
                 // doesn't interfere with other tabs
                 if (d.fish_api_key && d.tts_engine !== 'FISH_AUDIO') {
-                    // Only update UI section visibility if tab-ai is active
-                    if (document.querySelector('#tab-ai.section.active')) {
+                    // FIX 4b-bis: Also check voice license before enabling Fish Audio
+                    // (same check as in selEngine.onchange handler)
+                    const canUseFishAudio = (CLOUD_FEATURES_ENABLED && (voiceLicensed || FORCE_UNLOCK_VOICE));
+                    if (canUseFishAudio && document.querySelector('#tab-ai.section.active')) {
                         if (qs('#selEngine')) qs('#selEngine').value = 'FISH_AUDIO';
                         updateUIBasedOnEngine('FISH_AUDIO');
                     }
@@ -7590,8 +7592,19 @@ async function syncMiniOverlayToggle() {
         const hint = qs('#miniOverlayHint');
         if (hint) hint.style.display = 'none';
     } catch (_) {}
-}
+    }
 
-</script>
+    // FIX 4a: On page load, trigger showTab() with the currently active tab to sync HUD
+    // visibility and hide config sections. This ensures the floating hub is hidden
+    // on non-overlay tabs and config sections are hidden on tab switching.
+    window.addEventListener('load', function() {
+        const activeTab = document.querySelector('#tab-home.section.active');
+        if (activeTab) {
+            showTab(activeTab.id);
+        } else {
+            showTab('tab-home');
+        }
+    });
+    </script>
 </body>
 </html>
