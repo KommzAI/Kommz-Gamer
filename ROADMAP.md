@@ -1,6 +1,6 @@
 # Kommz Gamer — Roadmap
 
-> Dernière mise à jour : V5.4 démarrée · 2026-07-05
+> Dernière mise à jour : V5.4 démarrée · 2026-08-14
 
 ---
 
@@ -63,6 +63,7 @@
 - [✅] Buffer size auto-tuning
 - [✅] Multi-périphérique, VB-Cable / Voicemeeter natif
 - [✅] Mix micro + son jeu
+- [✅] Persistance de configuration fiable en build Nuitka onefile : profil runtime dans `%LOCALAPPDATA%\KommzGamer`, migration du template et fusion non destructive des clés manquantes
 
 ### Monitoring & Analytics
 - [✅] Overlay temps réel enrichi
@@ -70,6 +71,14 @@
 - [✅] Export logs session JSON structuré
 - [✅] Métriques avancées latence / CPU / RAM
 - [✅] Alertes intelligentes
+- [✅] HUD flottant limité à l'onglet `Overlay & Couleurs` et boucle Qt dédiée pour le traitement fiable des commandes show/hide
+
+### Fish Audio Premium
+- [✅] Moteur TTS `FISH_AUDIO` intégré au pipeline PTT, avec synthèse WAV et lecture sur le routage audio existant
+- [✅] Configuration par clé API et Voice ID Fish Audio, sauvegardée localement dans le profil utilisateur
+- [✅] Formulaire Fish protégé contre l'écrasement par le polling et sauvegarde explicite de la configuration
+- [✅] Rendu Fish expressif : transmission des signaux détectés vers les marqueurs S2 (`[laughing]`, `[angry]`, `[sad]`, `[nervous]`, `[excited]`)
+- [✅] Fish Audio reste client-géré : chaque utilisateur fournit sa propre clé API et son propre Voice ID
 
 ### Refactoring Flask / Modularisation
 - [✅] 13 blueprints créés : config, license, audio, overlay, tts, stt, listen, privacy, scenes, ui, remote, cloud, subs
@@ -107,6 +116,7 @@
 - [✅] Phase 2B : _mobile_connected propagé correctement vers vtp_core
 - [✅] Phase 3 : Audit contrôles de licence → architecture saine, RAS
 - [✅] Phase 4 : IDs audio canoniques (WASAPI::NOM) — commits f529d43 / dc72b3d
+- [✅] Fix config persistence mode compilé (3 bugs : migration silencieuse, return prématuré, CONFIG_FILE non importé dans vtp_core)
 
 ---
 
@@ -151,6 +161,14 @@
 - [ ] Twitch/YouTube chat → TTS casque
 - [ ] Intégration Stream Deck
 - [ ] Ducking Spotify automatique
+
+### Benchmark Fish Speech sur Modal
+- [ ] Vérifier la licence commerciale Fish Speech avant tout déploiement client
+- [ ] Créer un endpoint Modal isolé, sans modifier les endpoints GPT-SoVITS et XTTS existants
+- [ ] Benchmark sur GPU adapté : chargement modèle, VRAM, cold start, temps au premier audio, durée de rendu et RTF
+- [ ] Mesurer la concurrence PTT (1, puis 2, puis 3 requêtes), la file d'attente et le coût GPU par minute générée
+- [ ] Comparer Fish Speech, GPT-SoVITS et XTTS sur la qualité de clonage, l'expressivité, la latence jeu/Discord et le coût
+- [ ] Décider sur résultats mesurés si Fish remplace totalement, partiellement ou reste une option Premium
 
 ---
 
