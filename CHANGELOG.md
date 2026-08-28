@@ -4,11 +4,41 @@
 
 ## Kommz Gamer 5.3 - 2026-08-05
 
-### Bugfix de stabilisation
-- Phase 1 — Audit des symboles manquants dans les blueprints (`modules/listen`, `modules/guide`, `modules/remote`, `modules/scenes`) : zéro symbole manquant confirmé dans `vtp_core.py`.
-- Phase 2 — Suppression du doublon `_listen_now_utc_iso` (`listen_bp.py`) ; propagation correcte de `_mobile_connected` vers `vtp_core` (au lieu d'une écriture locale via `globals()`).
-- Phase 3 — Audit des contrôles de licence : architecture déjà centralisée dans `modules/license/license.py`, aucune refonte nécessaire.
-- Phase 4 — Migration des identifiants de périphériques audio (`game_input_device` / `game_output_device`) d'un index PortAudio brut vers une signature canonique stable `"{hostapi}::{nom}"` (ex : `WASAPI::CABLE OUTPUT`), avec cache runtime séparé et rétrocompatibilité assurée pour les configurations existantes.
+### Audio et pipeline temps reel
+- Consolidation du pipeline vocal distant avec Whisper Modal, GPT-SoVITS Modal et XTTS Modal, avec fallback explicite lorsque les services cloud sont indisponibles.
+- Stabilisation du routage entre le micro configure, la sortie virtuelle, le retour casque et les moteurs de synthese.
+- Correction du fallback de frequence d'echantillonnage pour le monitoring afin de conserver une lecture fiable lorsque les peripheriques n'utilisent pas la meme frequence native.
+- Ajout de diagnostics runtime pour suivre le moteur STT, le routage Hybrid, le moteur TTS actif et l'etat des modules audio.
+- Ajout de la detection automatique de jeu par fingerprint audio, avec chaine de repli processus, titre de fenetre, fingerprint, puis selection manuelle.
+- Ajout du support ASIO, de l'auto-tuning du buffer, du multi-peripherique et de l'integration native VB-Cable / Voicemeeter.
+
+### Traitement vocal et presets
+- Voice Focus V3 : calibration automatique, reduction du bruit par bandes, de-essing, de-clicking, de-clipping, auto-gain riding, VAD v2 avec fallback Silero, voiceprint leger et traitement anti-reverberation.
+- Preset Universel intelligent, presets par type de microphone, import/export JSON, preset store communautaire et planification des presets.
+- Mode Auto pour les presets avec detection multi-jeu et gestion de l'alt-tab.
+
+### Interface et exploitation
+- Ajout d'etats visuels separes pour la transcription, Hybrid et la synthese finale dans le pipeline vocal.
+- Ajout de supervision runtime des modules et d'informations de sante des services audio.
+- Renforcement du watchdog d'ecoute et des rapports de session pour faciliter les diagnostics de longue duree.
+- Overlay temps reel enrichi, dashboard analytics local, export JSON structure des sessions et metriques de latence, CPU et RAM.
+
+### Architecture
+- Modularisation Flask en 13 blueprints couvrant notamment la configuration, licence, audio, overlay, TTS, STT, ecoute, scenes, interface et acces distant.
+- Extraction d'environ 81 routes depuis `vtp_core.py`, avec conservation des routes runtime liees aux globals audio et au HUD.
+- Nettoyage du depot et suppression de code ou fichiers devenus inutiles apres le refactoring.
+
+### Stabilisation et configuration
+- Audit des symboles manquants dans les blueprints (`modules/listen`, `modules/guide`, `modules/remote`, `modules/scenes`) : zero symbole manquant confirme dans `vtp_core.py`.
+- Suppression du doublon `_listen_now_utc_iso` (`listen_bp.py`) ; propagation correcte de `_mobile_connected` vers `vtp_core` au lieu d'une ecriture locale via `globals()`.
+- Audit des controles de licence : architecture deja centralisee dans `modules/license/license.py`, aucune refonte necessaire.
+- Migration des identifiants de peripheriques audio (`game_input_device` / `game_output_device`) d'un index PortAudio brut vers une signature canonique stable `"{hostapi}::{nom}"` (ex : `WASAPI::CABLE OUTPUT`), avec cache runtime separe et retrocompatibilite assuree pour les configurations existantes.
+- Correction de la persistance de configuration en mode compile : migration du template, chemin runtime durable et import explicite de `CONFIG_FILE`.
+- Corrections de stabilite post-refactoring : defaults audio manquants, persistance de licence, rate mismatch monitoring, polling HUD, boucle overlay, sortie de sous-titres, validation de peripheriques et handlers F2/F3.
+
+### Verification
+- Compilation syntaxique de `vtp_core.py` et `modules/config/config.py` validee apres les correctifs de stabilisation.
+- Verification ciblee de la resolution des signatures audio : host API, fallback par nom, sens input/output et compatibilite des anciennes configurations.
 
 ## Kommz Gamer 4.6 - 2026-03-22
 
