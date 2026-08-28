@@ -14,6 +14,7 @@ import json
 import time
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -23,82 +24,64 @@ from pathlib import Path
 
 _BASE_DIR = Path(__file__).parent.parent.parent
 
+def _is_compiled_runtime() -> bool:
+    """Détecte PyInstaller/Nuitka, y compris le onefile sans marqueur sys."""
+    if getattr(sys, "frozen", False) or getattr(sys, "__compiled__", False):
+        return True
+    try:
+        executable = Path(sys.executable).resolve()
+        if executable.suffix.lower() == ".exe" and executable.stem.lower() not in {"python", "pythonw"}:
+            return True
+        extracted = Path(__file__).resolve()
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        return temp_root in extracted.parents
+    except Exception:
+        return False
+
 def _get_persistent_config_dir() -> Path:
-    """F5: En mode compilé → dossier de l'exe (dist/).
-    En mode source → dossier du projet (_BASE_DIR).
-    Ainsi settings.private.json est créé à côté du .exe —
-    visible et persistant entre les lancements, portable."""
-    is_compiled = (
-        getattr(sys, "frozen", False)       # PyInstaller
-        or getattr(sys, "__compiled__", False)  # Nuitka (onefile + standalone)
-        or "__compiled__" in dir(sys)           # Nuitka fallback
-    )
+    """Retourne le dossier persistant, distinct des fichiers Nuitka temporaires."""
+    is_compiled = _is_compiled_runtime()
     if is_compiled:
-        # Dossier contenant l'exe (dist/) — settings.json suiv  le exe
-        exe_dir = Path(sys.executable).parent
-        return exe_dir
+        appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "KommzGamer"
     return _BASE_DIR
 
 def _resolve_config_file() -> Path:
-    """Trouve le bon fichier settings en cherchant dans l'ordre.
-
-    🔥 FIX PERSISTENCE EXEmode : en frozen onefile, _BASE_DIR pointe vers
-    _MEIPSS (répertoire TEMPORAIRE en lecture seule). Si on charge le settings
-    directement depuis _MEIPSS, ``save_settings()`` échouera (PermissionError
-    sur un dossier temporaire en lecture seule) → AUCUNE persistance possible.
-
-    Donc en frozen, on force TOUJOURS la migration depuis _MEIPSS vers
-    %LOCALAPPDATA\\KommzGamer\\settings.private.json (persisté) au premier
-    lancement, et on retourne ce chemin persisté comme CONFIG_FILE.
-    Cela garantit que load_settings lit le bon fichier ET que save_settings
-    peut écrire dessus.
-    """
+    """Résout le fichier runtime depuis le template livré avec l'application."""
     config_dir = _get_persistent_config_dir()
+    is_compiled = _is_compiled_runtime()
     # 1. Variable d'environnement si déjà chargée
     env_file = os.environ.get("KOMMZ_SETTINGS_FILE", "")
     if env_file:
         p = config_dir / env_file
         if p.exists():
             return p
-    # --- FIX EXE mode: migration forcée vers le dossier persistant ---
-    # search_dirs : exe_dir (PRIORITÉ!) + _MEIPSS (via _BASE_DIR) + config_dir
+    # search_dirs : exe_dir (priorité) + bundle + dossier de configuration.
     search_dirs = [_BASE_DIR]
-    if getattr(sys, "frozen", False):
-        # V5.4: exe_dir en 1er pour utiliser settings.json placé
-        # à côté du .exe (mode portable). Cela permet au client de
-        # déplacer le logiciel et que settings.json suive.
+    if is_compiled:
         try:
             exe_dir = Path(sys.executable).resolve().parent
             if exe_dir not in search_dirs:
-                search_dirs.insert(0, exe_dir)  # PRIORITÉ ABSOLUE
+                search_dirs.insert(0, exe_dir)
         except Exception:
             pass
-        # _MEIPSS contient les data files inclus si --include-data-files utilisé
+        # Les données Nuitka/PyInstaller, lorsqu'elles sont incluses, vivent ici.
         meipass = getattr(sys, "_MEIPASS", "")
         if meipass:
             mp = Path(meipass)
             if mp not in search_dirs:
                 search_dirs.append(mp)
-    # V5.4: Priorité au template settings.json pour distribution client.
-    # settings.json = template propre (sans clés dev) inclus dans le build.
-    # settings.private.json = utilisé en source (dév) uniquement.
-    # En compilé, on migre toujours vers settings.private.json (persistance).
-    # En source, on garde le même nom (settings.private.json prioritaire).
-    is_frozen = bool(getattr(sys, "frozen", False) or getattr(sys, "__compiled__", False) or "__compiled__" in dir(sys))
-    if is_frozen:
+    if is_compiled:
         legacy_files = ["settings.json", "settings.private.json"]
     else:
         legacy_files = ["settings.private.json", "settings.json"]
-    # Si on est en frozen (buildé) : on copie toujours depuis la source livrée
-    # (MEIPSS/exe) vers le dossier persistant, même si un settings persistant
-    # existe déjà — on ne veut JAMAIS lire/écrire depuis _MEIPSS (lecture seule).
     for fname in legacy_files:
         for base in search_dirs:
             legacy = base / fname
             if not legacy.exists():
                 continue
-            # V5.4: toujours migrer vers settings.private.json (nom persistant unifié)
-            dest_name = "settings.private.json" if is_frozen else fname
+            dest_name = "settings.private.json" if is_compiled else fname
             dest = config_dir / dest_name
             if not dest.exists():
                 try:
@@ -122,9 +105,8 @@ def _resolve_config_file() -> Path:
             dest.write_text("{}", encoding="utf-8")
     except Exception as e:
         print(f"⚠️ Config dir create error: {e}", file=sys.stderr, flush=True)
-    # V5.4: En frozen, créer un template settings.json à côté du .exe
-    # si aucun n'existe — pour prochaine utilisation portable
-    if is_frozen:
+    # Garder un template visible à côté de l'exécutable pour les distributions portables.
+    if is_compiled:
         try:
             exe_dir = Path(sys.executable).resolve().parent
             template = exe_dir / "settings.json"
@@ -135,7 +117,43 @@ def _resolve_config_file() -> Path:
             print(f"⚠️ Config template create error: {e}", file=sys.stderr, flush=True)
     return dest
 
+
+def _merge_missing_template_settings() -> None:
+    """Complète un profil AppData ancien sans remplacer ses valeurs existantes."""
+    if not _is_compiled_runtime():
+        return
+    template_name = os.environ.get("KOMMZ_SETTINGS_FILE", "settings.private.json")
+    template_candidates = [
+        Path(sys.executable).resolve().parent / template_name,
+        Path(sys.executable).resolve().parent / "settings.json",
+        _BASE_DIR / template_name,
+        _BASE_DIR / "settings.json",
+    ]
+    template_path = next((p for p in template_candidates if p.exists() and p != CONFIG_FILE), None)
+    if template_path is None or not CONFIG_FILE.exists():
+        return
+    try:
+        template = json.loads(template_path.read_text(encoding="utf-8-sig"))
+        current = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
+        if not isinstance(template, dict) or not isinstance(current, dict):
+            return
+        missing = {key: value for key, value in template.items() if key not in current}
+        if missing:
+            current.update(missing)
+            CONFIG_FILE.write_text(
+                json.dumps(current, indent=4, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(
+                f"[CONFIG] {len(missing)} cles ajoutees depuis {template_path}",
+                file=sys.stderr,
+                flush=True,
+            )
+    except Exception as e:
+        print(f"[CONFIG] Fusion template ignoree : {e}", file=sys.stderr, flush=True)
+
 CONFIG_FILE = _resolve_config_file()
+_merge_missing_template_settings()
 
 # Debug logs
 import sys
@@ -236,7 +254,9 @@ AUDIO_CONFIG = {
     "aws_region": "us-east-1",
     "azure_region": "westus",
     "google_region": "us-central1",
-    "ptt_key": "f9",
+    # Canonical PTT key. ``ptt_key`` is migrated on load for older profiles.
+    "ptt_hotkey": "f9",
+    "voice_gender": "Female",
     "ptt_mode": False,
     "ptt_release_delay": 0.3,
     "overlay_enabled": False,
@@ -337,6 +357,8 @@ AUDIO_CONFIG = {
     "mini_overlay_enabled":  False,
     "kommz_client_id":       "",
     "voice_active_id":       "",
+    # --- GPT-SoVITS Modal (V5.4) ---
+    "gpt_api_url":           DEFAULT_KOMMZ_GPT_API_URL,
     # --- Fish Audio API (V5.4) ---
     "fish_api_key":          "",
     "fish_voice_id":         "",
@@ -474,6 +496,20 @@ def load_settings():
         for key in loaded:
             raw_value = loaded[key]
             AUDIO_CONFIG[key] = _repair_display_text(raw_value) if isinstance(raw_value, str) else raw_value
+
+        # V5.4: ``ptt_key`` was used by an older capture path while the runtime
+        # and status API use ``ptt_hotkey``. Keep one persisted source of truth.
+        legacy_ptt_key = str(loaded.get("ptt_key") or "").strip()
+        persisted_ptt_hotkey = str(loaded.get("ptt_hotkey") or "").strip()
+        migrated_ptt_key = "ptt_key" in AUDIO_CONFIG
+        if persisted_ptt_hotkey:
+            AUDIO_CONFIG["ptt_hotkey"] = persisted_ptt_hotkey
+        elif legacy_ptt_key:
+            AUDIO_CONFIG["ptt_hotkey"] = legacy_ptt_key
+        if migrated_ptt_key:
+            AUDIO_CONFIG.pop("ptt_key", None)
+        if migrated_ptt_key or (not persisted_ptt_hotkey and legacy_ptt_key):
+            save_settings()
         
         _apply_edition_profile_constraints()
         
