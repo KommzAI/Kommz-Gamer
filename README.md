@@ -1,4 +1,4 @@
-﻿# Kommz Gamer Community
+# Kommz Gamer Community
 
 [Français](README.md) | [English](README.en.md)
 
@@ -56,6 +56,8 @@ La couche moteur vocale est portée par une brique séparée: `Kommz Voice` (XTT
 Ce dépôt est conçu pour la transparence et l’extensibilité. L’offre supportée est conçue pour les équipes qui veulent privilégier la vitesse, la fiabilité et l’exploitation managée.
 
 ## Démarrage rapide
+> ⚠️ **Prérequis :** Kommz Gamer Community dépend de la brique moteur vocale **Kommz Voice**. Clonez et configurez ce repo en parallèle avant de lancer l'application : https://github.com/Kommz-Gamer/Kommz-Voice
+
 1. Copiez `.env.example` vers `.env` et renseignez les variables souhaitées.
 2. Copiez `settings.example.json` vers `settings.json` si vous voulez une base locale.
 3. Créez un environnement virtuel puis installez les dépendances.
