@@ -1,4 +1,4 @@
-﻿# Kommz Gamer Community
+# Kommz Gamer Community
 
 [Français](README.md) | [English](README.en.md)
 
@@ -56,6 +56,8 @@ The speech engine layer is carried by the separate `Kommz Voice` brick (XTTS + G
 This repo is designed for transparency and extensibility. The supported offering is designed for teams who prefer speed, reliability, and managed operations.
 
 ## Quick start
+> ⚠️ **Prerequisite:** Kommz Gamer Community depends on the **Kommz Voice** speech engine layer. Clone and configure that repo alongside this one before launching the app: https://github.com/Kommz-Gamer/Kommz-Voice
+
 1. Copy `.env.example` to `.env` and fill in the values you want to use.
 2. Copy `settings.example.json` to `settings.json` if you need a local baseline config.
 3. Create a virtual environment and install dependencies.
@@ -83,4 +85,3 @@ This repository is prepared as a community edition. Hosted services, commercial 
 
 ## License
 This project is intended to be distributed under the GNU Affero General Public License v3.0. See `LICENSE`.
-
