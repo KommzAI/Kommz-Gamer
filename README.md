@@ -1,31 +1,43 @@
 # Kommz Gamer Community
 
-[Français](README.md) | [English](README.en.md)
+[Français](README.fr.md) | [English](README.en.md)
 
-> **Édition Community**  
-> Noyau desktop open source, auto-hébergeable, conçu pour la personnalisation et les contributions.
+> **Community Edition**  
+> Open-source desktop core for self-hosted usage, customization, and contributions.
 
 ![Community Edition](https://img.shields.io/badge/Edition-Community-2563eb?style=for-the-badge)
 ![License AGPLv3](https://img.shields.io/badge/License-AGPLv3-16a34a?style=for-the-badge)
 [![GitHub Release](https://img.shields.io/github/v/release/Kommz-Gamer/Kommz-Gamer?style=for-the-badge)](https://github.com/Kommz-Gamer/Kommz-Gamer/releases)
-[![Discord](https://img.shields.io/badge/Discord-Communaute-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/uv25d6uGKZ)
-[![Patreon](https://img.shields.io/badge/Soutenir-Patreon-f96854?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/KommzInnovations)
+[![Discord](https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/uv25d6uGKZ)
+[![Patreon](https://img.shields.io/badge/Support-Patreon-f96854?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/KommzInnovations)
 
-Kommz Gamer Community est l’édition open source de Kommz Gamer, une application desktop de traduction vocale bidirectionnelle en temps réel pour le gaming, le streaming et les échanges multilingues en direct.
-La couche moteur vocale est portée par une brique séparée: `Kommz Voice` (XTTS + GPT-SoVITS).
+Kommz Gamer Community is the open-source edition of Kommz Gamer, a real-time voice translation desktop app designed for gaming, streaming, and multilingual live conversations.
+The speech engine layer is carried by the separate `Kommz Voice` brick (XTTS + GPT-SoVITS backend flows).
 
-## Commencer ici
-- Dernieres releases: https://github.com/Kommz-Gamer/Kommz-Gamer/releases
-- Repo moteur Kommz Voice: https://github.com/Kommz-Gamer/Kommz-Voice
-- Rejoindre la communaute: https://discord.gg/uv25d6uGKZ
-- Soutenir le projet: https://www.patreon.com/KommzInnovations
-- Site officiel: https://kommz.fr
+## Start here
+- Latest releases: https://github.com/Kommz-Gamer/Kommz-Gamer/releases
+- Kommz Voice engine repo: https://github.com/Kommz-Gamer/Kommz-Voice
+- Join the community: https://discord.gg/uv25d6uGKZ
+- Support the project: https://www.patreon.com/KommzInnovations
+- Official website: https://kommz.fr
 
-## Communaute et support
-- GitHub: code source, issues, releases, contributions
-- Kommz Voice: couche backend moteur dediee (XTTS + GPT-SoVITS) -> https://github.com/Kommz-Gamer/Kommz-Voice
-- Discord: aide, retours, roadmap, discussions
-- Patreon: soutien, contexte d'acces anticipe, durabilite du projet
+## Community and support
+- GitHub: source code, issues, releases, contributions
+- Kommz Voice: dedicated backend engine layer (XTTS + GPT-SoVITS) -> https://github.com/Kommz-Gamer/Kommz-Voice
+- Discord: help, feedback, roadmap, community discussions
+- Patreon: support, early access context, project sustainability
+
+## What is included
+- Desktop client source code
+- UI and runtime modules
+- Community-oriented configuration and examples
+- Documentation and changelog history
+- **Works out of the box:** STT (Deepgram / Whisper), translation (DeepL), system TTS (Edge/Windows), Voice Focus V3, Game Detection V2, Mobile Bridge, AI modules (Shadow AI, Hybrid Activation, etc.)
+- **With self-hosting:** Kommz Voice (XTTS + Claude Opus 5oVITS) deployed on Modal — follow the dedicated repo for setup
+- **Optional:** Fish Audio (personal API key), Microsoft Edge/Windows voices
+- **Works out of the box:** STT (Deepgram / Whisper), translation (DeepL), system TTS (Edge/Windows), Voice Focus V3, Game Detection V2, Mobile Bridge, AI modules (Shadow AI, Hybrid Activation, etc.)
+- **With self-hosting:** Kommz Voice (XTTS + Claude Opus 5oVITS) deployed on Modal — follow the dedicated repo for setup
+- **Optional:** Fish Audio (personal API key), Microsoft Edge/Windows voices
 
 ## Ce qui est inclus
 - Code source du client desktop
@@ -36,57 +48,36 @@ La couche moteur vocale est portée par une brique séparée: `Kommz Voice` (XTT
 - **Avec auto-hébergement :** Kommz Voice (XTTS + Claude Opus 5oVITS) déployé sur Modal — suivez le repo dédié pour le setup
 - **En option :** Fish Audio (clé API personnelle), voix Microsoft Edge/Windows
 
-## Ce qui n’est pas inclus
-- Infrastructure cloud privée
-- Services de licence de production
-- Endpoints vocaux hébergés et support managé
-- Artéfacts de build internes, secrets locaux et assets de test personnels
+## What is not included
+- Private cloud infrastructure
+- Production license services
+- Hosted voice endpoints and managed support services
+- Internal build artifacts, local secrets, and personal test assets
 
 ## Community vs Pro
-### Édition Community (ce dépôt)
-- Code source complet de l’application desktop
-- Workflow auto-hébergé et auto-configuré
-- Contributions et échanges communautaires
-- Pas de verrou de licence managée intégré en mode community
-- Vous exploitez et maintenez votre propre stack locale/cloud
+### Community Edition (this repository)
+- Full source code for the desktop app
+- Self-hosted and self-configured workflow
+- Community contributions and discussions
+- No built-in managed licensing gate in community mode
+- You run and maintain your own local/cloud stack
 
-### Offre Pro / Supportée (hors de ce dépôt)
-- Releases Windows stables et onboarding guidé
-- Endpoints vocaux hébergés et services cloud managés
-- Support prioritaire (setup, dépannage, optimisation)
-- Workflows en accès anticipé et accompagnement orienté production
+### Pro / Supported Offering (outside this repository)
+- Stable Windows releases and guided onboarding
+- Hosted voice endpoints and managed cloud services
+- Priority support (setup, troubleshooting, optimization)
+- Early access workflows and production-oriented assistance
 
-Ce dépôt est conçu pour la transparence et l’extensibilité. L’offre supportée est conçue pour les équipes qui veulent privilégier la vitesse, la fiabilité et l’exploitation managée.
+This repo is designed for transparency and extensibility. The supported offering is designed for teams who prefer speed, reliability, and managed operations.
 
-## Démarrage rapide
-> ⚠️ **Prérequis :** Kommz Gamer Community dépend de la brique moteur vocale **Kommz Voice**. Clonez et configurez ce repo en parallèle avant de lancer l'application : https://github.com/Kommz-Gamer/Kommz-Voice
+## Quick start
+> ⚠️ **Prerequisite:** Kommz Gamer Community depends on the **Kommz Voice** speech engine layer. Clone and configure that repo alongside this one before launching the app: https://github.com/Kommz-Gamer/Kommz-Voice
 
-1. Copiez `.env.example` vers `.env` et renseignez les variables souhaitées.
-2. Copiez `settings.example.json` vers `settings.json` si vous voulez une base locale.
-3. Créez un environnement virtuel puis installez les dépendances.
-4. Lancez l’application depuis les sources.
+1. Copy `.env.example` to `.env` and fill in the values you want to use.
+2. Copy `settings.example.json` to `settings.json` if you need a local baseline config.
+3. Create a virtual environment and install dependencies.
+4. Launch the app from source.
 
-## Note open source
-Ce dépôt est préparé comme édition community. Les services hébergés, le support commercial et l'infrastructure vocale managée restent hors du dépôt public.
-La version Community supporte le mode cloud optionnel (XTTS + GPT-SoVITS sur Modal) pour le voice cloning — consultez le repo Kommz Voice pour le déploiement.
-
-## Liens du projet
-- Site web: https://kommz.fr
-- Discord: https://discord.gg/uv25d6uGKZ
-- Patreon: https://www.patreon.com/KommzInnovations
-
-## Template de release
-- Template de release EN: `.github/release-template.en.md`
-- Template de release FR: `.github/release-template.fr.md`
-- Checklist de release: `.github/release-checklist.md`
-
-## Structure du dépôt
-- Guide de structure recommandé: `docs/REPO_STRUCTURE.md`
-
-## Workflow de contribution
-- Template de pull request: `.github/pull_request_template.md`
-- Templates d'issues: `.github/ISSUE_TEMPLATE/`
-
-## Licence
-Ce projet est distribué sous GNU Affero General Public License v3.0. Voir `LICENSE`.
-
+## Open-source note
+This repository is prepared as a community edition. Hosted services, commercial support, and managed voice infrastructure remain outside the public repo.
+The Community edition supports optional cloud mode (XTTS + Claude Opus 5oVITS on Modal) for voice cloning — check the Kommz Voice repo for deployment.
