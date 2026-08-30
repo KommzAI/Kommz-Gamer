@@ -202,10 +202,16 @@ DEFAULT_KOMMZ_WHISPER_MODEL = (
     str(os.environ.get("KOMMZ_DEFAULT_WHISPER_MODEL", "small") or "small").strip().lower()
     or "small"
 )
+DEFAULT_KOMMZ_GPT_API_URL = os.environ.get(
+    "KOMMZ_DEFAULT_GPT_API_URL",
+    "https://kommz-innovations--kommz-voice-gptsovits-tts.modal.run",
+).strip().rstrip("/")
+
 if not CLOUD_FEATURES_ENABLED:
     DEFAULT_KOMMZ_CLONE_URL = ""
     DEFAULT_KOMMZ_SYNTHESIS_URL = ""
     DEFAULT_KOMMZ_WHISPER_URL = ""
+    DEFAULT_KOMMZ_GPT_API_URL = ""
 
 # 1. UNE SEULE DÉFINITION COMPLÈTE (Ne pas en remettre une autre plus bas !)
 
@@ -301,13 +307,21 @@ def _get_voice_library() -> list:
     for raw in lib:
         item = _normalize_voice_library_entry(raw)
         vid = item.get("voice_id", "")
-        if not vid or vid in seen:
+        if not vid or identity in seen:
             continue
-        seen.add(vid)
+        seen.add(identity)
         normalized.append(item)
     AUDIO_CONFIG["voice_library"] = normalized
     return normalized
 
+
+def _set_voice_gender(gender: str, persist: bool = False):
+    g = str(gender or "Female").strip().capitalize()
+    if g not in {"Female", "Male"}:
+        g = "Female"
+    AUDIO_CONFIG["voice_gender"] = g
+    if persist:
+        save_settings()
 
 def _set_voice_active_id(voice_id: str, persist: bool = False):
     vid = str(voice_id or "").strip()
@@ -5802,6 +5816,50 @@ def kommz_tts_generator(text):
         "fast" if (hybrid_enabled and turbo_mode and _get_hybrid_rts_preset() == "fast") else "quality",
     ])
 
+    def _try_modal_synthesis_direct(text: str, client_id_cfg: str) -> bytes | None:
+        """
+        Appelle directement Modal /v1/synthesis (bypass Render.com).
+        Modal fait le lookup Supabase lui-même avec l'api_key fournie.
+        """
+        if not _resolve_kommz_voice_endpoint() or not api_key_cfg:
+            return None
+        modal_base = _resolve_kommz_voice_endpoint()
+        if "-clone.modal.run" in modal_base:
+            synth_url = modal_base.replace("-clone.modal.run", "-synthesis.modal.run")
+        elif "-generate.modal.run" in modal_base:
+            synth_url = modal_base.replace("-generate.modal.run", "-synthesis.modal.run")
+        else:
+            return None
+        try:
+            payload = {
+                "text": text,
+                "voice_id": client_id_cfg,
+                "api_key": api_key_cfg,
+                "language": xtts_lang,
+                "speed": float(tts_speed),
+                "temperature": float(tts_temp),
+                "top_k": int(tts_top_k),
+                "top_p": float(tts_top_p),
+                "repetition_penalty": float(tts_repetition_penalty),
+                "length_penalty": float(tts_length_penalty),
+                "enable_text_splitting": bool(tts_enable_split),
+                "gpt_cond_len": int(tts_gpt_cond_len),
+                "gpt_cond_chunk_len": int(tts_gpt_cond_chunk_len),
+                "max_ref_len": int(tts_max_ref_len),
+                "sound_norm_refs": bool(tts_sound_norm_refs),
+            }
+            r = requests.post(synth_url, json=payload, timeout=(10, 120))
+            if not r.ok:
+                return None
+            resp = r.json()
+            audio_b64 = resp.get("audio_b64", "")
+            if not audio_b64:
+                return None
+            import base64
+            return base64.b64decode(audio_b64)
+        except Exception:
+            return None
+
     def _try_voice_id_api():
         if client_id_cfg and api_key_cfg and synth_base:
             synth_candidates = _build_kommz_synthesis_candidates(synth_base)
@@ -5913,6 +5971,15 @@ def kommz_tts_generator(text):
     # V5: si un voice_id est configuré, on le tente en priorité stricte
     # avant Hybrid/clone pour respecter la voix demandée par l'utilisateur.
     if client_id_cfg and api_key_cfg:
+        voice_audio = _try_modal_synthesis_direct(text, client_id_cfg)
+        if voice_audio:
+            stealth_print("✅ Voice_id Modal direct OK (bypass Render.com).")
+            _set_pipeline_runtime(
+                tts_engine="Kommz Voice API",
+                tts_route="Modal direct /v1/synthesis",
+            )
+            yield voice_audio
+            return
         voice_audio = _try_voice_id_api()
         if voice_audio:
             yield voice_audio

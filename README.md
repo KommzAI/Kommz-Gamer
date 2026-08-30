@@ -32,6 +32,9 @@ La couche moteur vocale est portée par une brique séparée: `Kommz Voice` (XTT
 - Interface et modules runtime
 - Configuration orientée communauté et exemples
 - Documentation et historique des changements
+- **Fonctionne directement :** STT (Deepgram / Whisper), traduction (DeepL), TTS système (Edge/Windows), Voice Focus V3, Game Detection V2, Mobile Bridge, modules IA (Shadow AI, Hybrid Activation, etc.)
+- **Avec auto-hébergement :** Kommz Voice (XTTS + Claude Opus 5oVITS) déployé sur Modal — suivez le repo dédié pour le setup
+- **En option :** Fish Audio (clé API personnelle), voix Microsoft Edge/Windows
 
 ## Ce qui n’est pas inclus
 - Infrastructure cloud privée
@@ -64,7 +67,8 @@ Ce dépôt est conçu pour la transparence et l’extensibilité. L’offre supp
 4. Lancez l’application depuis les sources.
 
 ## Note open source
-Ce dépôt est préparé comme édition community. Les services hébergés, le support commercial et l’infrastructure vocale managée restent hors du dépôt public.
+Ce dépôt est préparé comme édition community. Les services hébergés, le support commercial et l'infrastructure vocale managée restent hors du dépôt public.
+La version Community supporte le mode cloud optionnel (XTTS + GPT-SoVITS sur Modal) pour le voice cloning — consultez le repo Kommz Voice pour le déploiement.
 
 ## Liens du projet
 - Site web: https://kommz.fr
