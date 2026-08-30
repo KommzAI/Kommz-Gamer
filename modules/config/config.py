@@ -17,6 +17,14 @@ import shutil
 import tempfile
 from pathlib import Path
 
+# ============================================================================
+# REMOTE ENDPOINT CONSTANTS
+# ============================================================================
+
+DEFAULT_KOMMZ_GPT_API_URL = os.environ.get(
+    "KOMMZ_DEFAULT_GPT_API_URL",
+    "https://kommz-innovations--kommz-voice-gptsovits-tts.modal.run",
+).strip().rstrip("/")
 
 # ============================================================================
 # CONFIG FILE PATH

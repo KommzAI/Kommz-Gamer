@@ -5664,15 +5664,27 @@ function tr(frText) {
         };
 
         const needsVoiceLicense = ['KOMMZ_VOICE'];
+        const fishKeyEl = qs('#cfgFishApiKey');
         qs('#selEngine').onchange = async (e) => {
-            if (needsVoiceLicense.includes(e.target.value) && ((!CLOUD_FEATURES_ENABLED) || (!voiceLicensed && !FORCE_UNLOCK_VOICE))) {
-                showToast(!CLOUD_FEATURES_ENABLED ? (currentLang==='en' ? '🧩 Community edition: cloud disabled' : '🧩 Édition Community: cloud désactivé') : (currentLang==='en' ? '🔒 Voice license required' : '🔒 Licence Voice requise'));
+            const selectedEngine = e.target.value;
+            // Fish Audio sans clé : afficher le panneau de config, ne pas toucher au backend.
+            if (selectedEngine === 'FISH_AUDIO') {
+                const existingKey = fishKeyEl ? (fishKeyEl.value || '').trim() : '';
+                if (!existingKey) {
+                    updateUIBasedOnEngine('FISH_AUDIO');
+                    showToast(tr('🐟 Saisis ta clé API Fish Audio ci-dessous, puis sauvegarde'));
+                    return;
+                }
+                // Clé déjà présente : on peut commiter le choix de moteur.
+            }
+            if (needsVoiceLicense.includes(selectedEngine) && ((!CLOUD_FEATURES_ENABLED) || (!voiceLicensed && !FORCE_UNLOCK_VOICE))) {
+                showToast(!CLOUD_FEATURES_ENABLED ? (currentLang==='en' ? '🧩 Community edition: cloud disabled' : '🧩 Édition Community: cloud désactivé') : (currentLang==='en' ? '🔒 Licence Voice requise' : '🔒 Licence Voice requise'));
                 e.target.value = 'WINDOWS';
                 updateUIBasedOnEngine('WINDOWS');
                 return;
             }
-            updateUIBasedOnEngine(e.target.value);
-            const r = await fetch(CORE_URL + '/config/full', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ engine: e.target.value }) });
+            updateUIBasedOnEngine(selectedEngine);
+            const r = await fetch(CORE_URL + '/config/full', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ engine: selectedEngine, edge_voice: qs('#selEdgeVoice').value, gender: selectedGender }) });
             const d = await r.json().catch(() => ({}));
             if (r.status === 403) {
                 showToast(d.message || d.error || (currentLang==='en' ? '❌ Engine configuration refused' : '❌ Configuration du moteur refusée'));
