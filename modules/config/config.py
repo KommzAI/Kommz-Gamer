@@ -538,9 +538,7 @@ def _repair_payload_strings(value):
 
 
 # Domaines heberges par Kommz. Une edition Community ne doit jamais les
-# appeler : ce sont nos GPU et notre facture. `/warmup` cote Modal n'exige
-# aucune authentification, donc une URL qui traine dans un profil suffit a
-# allumer un conteneur.
+# appeler : ce sont nos GPU et notre facture.
 _KOMMZ_HOSTED_DOMAINS = (
     "kommzvoice.onrender.com",
     "kommz-innovations--",
