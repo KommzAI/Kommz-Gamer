@@ -3,331 +3,315 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Kommz Remote V4.9</title>
+  <title>Kommz Remote V5</title>
   <style>
+    /* Jetons alignes sur l'application : la telecommande avait sa propre
+       palette violette alors que l'app est en bleu signal. */
     :root {
-      --bg: #07090f;
-      --surface: #121826;
-      --surface-2: #0d1320;
-      --border: #25304a;
-      --primary: #6d28d9;
-      --primary-2: #8b5cf6;
-      --active: #10b981;
-      --warn: #f59e0b;
-      --danger: #ef4444;
-      --text: #f4f7ff;
-      --muted: #94a3b8;
+      --bg:        #0b0f14;
+      --surface:   #161b22;
+      --surface-2: #1c2430;
+      --border:    #30363d;
+      --primary:   #2f81f7;
+      --primary-2: #4d94f8;
+      --active:    #2ea043;
+      --warn:      #d29922;
+      --danger:    #f85149;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
     }
 
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
 
     body {
-      margin: 0;
-      padding: 14px;
+      margin: 0; padding: 12px;
       background: radial-gradient(1200px 400px at 50% -10%, #1e1b4b40, transparent), var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
       touch-action: manipulation;
+      padding-bottom: 30px;
     }
 
+    /* ── Header ──────────────────────────────────────────────────────────────── */
     .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-      gap: 8px;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; gap: 8px;
     }
-
-    .brand {
-      font-weight: 900;
-      letter-spacing: -0.4px;
-      font-size: 1.05rem;
-    }
-
-    .brand small {
-      color: var(--primary-2);
-      font-size: 0.8rem;
-    }
-
-    .header-right {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
+    .brand { font-weight: 900; letter-spacing: -0.4px; font-size: 1.05rem; }
+    .brand small { color: var(--primary-2); font-size: 0.78rem; }
+    .header-right { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
     .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      border-radius: 999px;
-      padding: 6px 10px;
-      border: 1px solid var(--border);
-      background: #111827;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: var(--muted);
-      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 999px; padding: 5px 9px;
+      border: 1px solid var(--border); background: #111827;
+      font-size: 0.70rem; font-weight: 700; color: var(--muted); white-space: nowrap;
     }
-
-    .status-pill.online { color: #6ee7b7; border-color: #166534; background: #052e1b; }
-    .status-pill.voice-on { color: #c4b5fd; border-color: #4c1d95; background: #1e1b4b; }
-    .status-pill.voice-off { color: #fda4af; border-color: #7f1d1d; background: #2a1116; }
+    .status-pill.online      { color: var(--active); border-color: rgba(46,160,67,0.35); background: #052e1b; }
+    .status-pill.voice-on    { color: var(--primary-2); border-color: #4c1d95; background: #1e1b4b; }
+    .status-pill.voice-off   { color: var(--danger); border-color: rgba(248,81,73,0.35); background: #2a1116; }
     .status-pill.warmup-ready { color: #93c5fd; border-color: #1d4ed8; background: #0b1c3f; }
-    .status-pill.warmup-cold { color: #fcd34d; border-color: #92400e; background: #2a1a0b; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .status-pill.warmup-cold  { color: var(--warn); border-color: rgba(210,153,34,0.35); background: var(--surface-2); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
+    /* ── Cards ───────────────────────────────────────────────────────────────── */
     .card {
       background: linear-gradient(180deg, var(--surface), var(--surface-2));
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px;
-      margin-bottom: 12px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border); border-radius: 16px;
+      padding: 12px; margin-bottom: 10px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
     }
-
     .card-header {
-      margin-bottom: 10px;
-      font-size: 0.72rem;
-      letter-spacing: 0.9px;
-      font-weight: 800;
-      color: #7c8aa8;
-      text-transform: uppercase;
+      margin-bottom: 9px; font-size: 0.68rem; letter-spacing: 0.9px;
+      font-weight: 800; color: #7c8aa8; text-transform: uppercase;
     }
 
-    .control-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-    }
+    /* ── Buttons ─────────────────────────────────────────────────────────────── */
+    .control-grid     { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+    .control-grid-3   { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
 
     .btn {
-      height: 60px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #0b1220;
-      color: #a6b2cc;
-      cursor: pointer;
-      font-weight: 800;
-      font-size: 0.72rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 3px;
+      height: 58px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--surface-2); color: #a6b2cc; cursor: pointer;
+      font-weight: 800; font-size: 0.70rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 3px;
       transition: transform 0.08s, border-color 0.2s, background 0.2s, color 0.2s;
     }
-
     .btn .icon { font-size: 1.1rem; line-height: 1; }
-    .btn:active { transform: scale(0.97); }
-    .btn.active { background: #1b1533; border-color: var(--primary); color: #f5f3ff; box-shadow: 0 0 0 1px #6d28d940 inset; }
-    .btn.active-green { background: #042d21; border-color: #047857; color: #d1fae5; }
-    .btn.warn { background: #2a1a0b; border-color: #92400e; color: #fcd34d; }
-    .btn.panic { background: #310f16; border-color: #7f1d1d; color: #fda4af; }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn:active           { transform: scale(0.96); }
+    .btn.active           { background: var(--surface-2); border-color: var(--primary); color: var(--text); box-shadow: 0 0 0 1px rgba(47,129,247,0.25) inset; }
+    .btn.active-green     { background: #042d21; border-color: #047857; color: #d1fae5; }
+    .btn.warn             { background: var(--surface-2); border-color: rgba(210,153,34,0.35); color: var(--warn); }
+    .btn.panic            { background: #310f16; border-color: rgba(248,81,73,0.35); color: var(--danger); }
+    .btn:disabled         { opacity: 0.42; cursor: not-allowed; }
+    .btn.wide             { grid-column: span 2; }
 
-    .row-split {
-      display: grid;
-      grid-template-columns: 1fr 2fr;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .gender-btn {
-      height: 44px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #0b1220;
-      font-size: 1.3rem;
-    }
-
-    input[type=range] {
-      width: 100%;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 8px;
-      background: #212b41;
-      border-radius: 99px;
-      outline: none;
-    }
-
-    input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      border: 2px solid #c4b5fd;
-      background: #6d28d9;
-      box-shadow: 0 0 12px rgba(109, 40, 217, 0.8);
-      margin-top: -7px;
-    }
-
-    .range-row { display: flex; justify-content: space-between; color: #8fa0be; font-size: 0.7rem; margin-top: 6px; }
-
-    .flag-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 7px;
-    }
-
+    /* ── Langue ──────────────────────────────────────────────────────────────── */
+    .flag-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 7px; }
     .flag-btn {
-      aspect-ratio: 1;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #0a0f1a;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      font-size: 1.3rem;
+      aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--border);
+      background: #0a0f1a; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; font-size: 1.3rem;
       transition: transform 0.08s, border-color 0.2s, background 0.2s;
     }
-
-    .flag-btn:active { transform: scale(0.95); }
+    .flag-btn:active   { transform: scale(0.94); }
     .flag-btn.selected { border-color: #7c3aed; background: #271447; box-shadow: 0 0 0 1px #7c3aed66 inset; }
     .flag-code {
-      position: absolute;
-      right: 2px;
-      bottom: 2px;
-      font-size: 0.52rem;
-      font-weight: 900;
-      color: #b6c1da;
-      background: #020617cc;
-      border-radius: 4px;
-      padding: 1px 3px;
+      position: absolute; right: 2px; bottom: 2px;
+      font-size: 0.50rem; font-weight: 900; color: #b6c1da;
+      background: #020617cc; border-radius: 4px; padding: 1px 3px;
     }
 
-    .quick-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 8px;
+    /* ── Genre & Volume ──────────────────────────────────────────────────────── */
+    .row-split { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .gender-btn {
+      height: 44px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface-2); font-size: 1.3rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
     }
-
-    .small-note {
-      margin-top: 8px;
-      color: #90a0bf;
-      font-size: 0.68rem;
-      line-height: 1.35;
+    input[type=range] {
+      width: 100%; -webkit-appearance: none; height: 8px;
+      background: #212b41; border-radius: 99px; outline: none;
     }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--primary-2); background: var(--primary);
+      box-shadow: 0 0 10px rgba(109,40,217,0.8); margin-top: -7px;
+    }
+    .range-row { display: flex; justify-content: space-between; color: #8fa0be; font-size: 0.68rem; margin-top: 5px; }
 
+    /* ── Stats mini ──────────────────────────────────────────────────────────── */
+    .stats-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 6px; margin-top: 2px; }
+    .stat-chip {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 10px; display: flex; flex-direction: column; gap: 2px;
+    }
+    .stat-label { font-size: 0.60rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 0.88rem; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+    .stat-value.ok   { color: var(--active); }
+    .stat-value.warn { color: var(--warn); }
+    .stat-value.err  { color: var(--danger); }
+
+    /* ── Toast ───────────────────────────────────────────────────────────────── */
     #toast {
-      position: fixed;
-      left: 50%;
-      bottom: 14px;
+      position: fixed; left: 50%; bottom: 14px;
       transform: translateX(-50%) translateY(14px);
-      opacity: 0;
-      pointer-events: none;
-      transition: all .18s ease;
-      padding: 9px 12px;
-      border-radius: 10px;
-      border: 1px solid #334155;
-      background: #0f172aee;
-      color: #e2e8f0;
-      font-size: .78rem;
-      font-weight: 700;
-      max-width: calc(100vw - 24px);
-      text-align: center;
-      z-index: 9999;
-      backdrop-filter: blur(6px);
+      opacity: 0; pointer-events: none;
+      transition: all 0.18s ease; padding: 9px 12px; border-radius: 10px;
+      border: 1px solid #334155; background: #0f172aee;
+      color: var(--text); font-size: 0.76rem; font-weight: 700;
+      max-width: calc(100vw - 24px); text-align: center;
+      z-index: 9999; backdrop-filter: blur(6px);
     }
-
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    #toast.ok { border-color: #166534; color: #bbf7d0; background: #052e1bee; }
-    #toast.warn { border-color: #92400e; color: #fde68a; background: #2a1a0bee; }
-    #toast.err { border-color: #7f1d1d; color: #fecaca; background: #2a1116ee; }
+    #toast.ok   { border-color: rgba(46,160,67,0.35); color: #bbf7d0; background: #052e1bee; }
+    #toast.warn { border-color: rgba(210,153,34,0.35); color: #fde68a; background: var(--surface-2)ee; }
+    #toast.err  { border-color: rgba(248,81,73,0.35); color: #fecaca; background: #2a1116ee; }
+
+    /* ── Preset strip ────────────────────────────────────────────────────────── */
+    .preset-strip {
+      display: flex; gap: 6px; align-items: center;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 10px;
+    }
+    .preset-name {
+      flex: 1; text-align: center; font-size: 0.78rem; font-weight: 800;
+      color: var(--primary-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .preset-arrow {
+      width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface-2); color: var(--text); font-size: 1.1rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.08s;
+    }
+    .preset-arrow:active { transform: scale(0.93); background: var(--surface-2); }
 
     @media (max-width: 380px) {
-      .flag-grid { grid-template-columns: repeat(4, 1fr); }
+      .flag-grid { grid-template-columns: repeat(4,1fr); }
     }
   </style>
 </head>
 <body>
+
+  <!-- ── Header ───────────────────────────────────────────────────────────── -->
   <div class="header">
-    <div class="brand">KOMMZ <small>Remote V4.9</small></div>
+    <div class="brand">KOMMZ <small>V5 Remote</small></div>
     <div class="header-right">
-      <div class="status-pill voice-off" id="voicePill"><div class="dot"></div><span id="voiceText">VOICE OFF</span></div>
-      <div class="status-pill warmup-cold" id="xttsPill"><div class="dot"></div><span id="xttsText">XTTS ?</span></div>
       <div class="status-pill" id="statusPill"><div class="dot"></div><span id="statusText">OFFLINE</span></div>
+      <div class="status-pill voice-off" id="voicePill"><div class="dot"></div><span id="voiceText">VOICE</span></div>
+      <div class="status-pill warmup-cold" id="xttsPill"><div class="dot"></div><span id="xttsText">XTTS</span></div>
     </div>
   </div>
 
+  <!-- ── Contrôles principaux ─────────────────────────────────────────────── -->
   <div class="card">
-    <div class="card-header">Contrôles live</div>
+    <div class="card-header" data-fr="Contrôles" data-en="Controls">Contrôles</div>
     <div class="control-grid">
-      <button class="btn" id="btnMain" onclick="cmdToggle()"><div class="icon">🔌</div><div>MAIN</div></button>
-      <button class="btn" id="btnMic" onclick="cmdListen()"><div class="icon">🎧</div><div>ÉCOUTE</div></button>
-      <button class="btn" id="btnTurbo" onclick="cmdFeature('turbo')"><div class="icon">🚀</div><div>TURBO</div></button>
-      <button class="btn" id="btnBypass" onclick="cmdBypass()"><div class="icon">⏭️</div><div>BYPASS F4</div></button>
-    </div>
-    <div class="quick-row">
-      <button class="btn warn" id="btnWarmup" onclick="cmdWarmup()"><div class="icon">🔥</div><div>WARMUP VOICE</div></button>
-      <button class="btn panic" id="btnPanic" onclick="cmdPanic()"><div class="icon">⚠️</div><div>PANIC RESET</div></button>
-    </div>
-    <div class="small-note">Le warmup est protégé par cooldown côté serveur + anti-spam côté télécommande.</div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">Europe & US</div>
-    <div class="flag-grid">
-      <button class="flag-btn" onclick="cmdLang('EN')" id="lang-EN">🇺🇸<div class="flag-code">EN</div></button>
-      <button class="flag-btn" onclick="cmdLang('FR')" id="lang-FR">🇫🇷<div class="flag-code">FR</div></button>
-      <button class="flag-btn" onclick="cmdLang('ES')" id="lang-ES">🇪🇸<div class="flag-code">ES</div></button>
-      <button class="flag-btn" onclick="cmdLang('DE')" id="lang-DE">🇩🇪<div class="flag-code">DE</div></button>
-      <button class="flag-btn" onclick="cmdLang('IT')" id="lang-IT">🇮🇹<div class="flag-code">IT</div></button>
-      <button class="flag-btn" onclick="cmdLang('PT')" id="lang-PT">🇵🇹<div class="flag-code">PT</div></button>
-      <button class="flag-btn" onclick="cmdLang('NL')" id="lang-NL">🇳🇱<div class="flag-code">NL</div></button>
-      <button class="flag-btn" onclick="cmdLang('PL')" id="lang-PL">🇵🇱<div class="flag-code">PL</div></button>
-      <button class="flag-btn" onclick="cmdLang('TR')" id="lang-TR">🇹🇷<div class="flag-code">TR</div></button>
-      <button class="flag-btn" onclick="cmdLang('RU')" id="lang-RU">🇷🇺<div class="flag-code">RU</div></button>
+      <button class="btn" id="btnMain" onclick="cmdToggle()">
+        <span class="icon">🔌</span><span>MAIN OFF</span>
+      </button>
+      <button class="btn" id="btnMic" onclick="cmdListen()">
+        <span class="icon">🎤</span><span data-fr="ÉCOUTE" data-en="LISTEN">ÉCOUTE</span>
+      </button>
+      <button class="btn" id="btnTurbo" onclick="cmdFeature('turbo')">
+        <span class="icon">⚡</span><span>TURBO</span>
+      </button>
+      <button class="btn" id="btnBypass" onclick="cmdBypass()">
+        <span class="icon">🔇</span><span>BYPASS</span>
+      </button>
     </div>
   </div>
 
+  <!-- ── Preset cycle ─────────────────────────────────────────────────────── -->
   <div class="card">
-    <div class="card-header">Asie & Monde</div>
-    <div class="flag-grid">
-      <button class="flag-btn" onclick="cmdLang('JP')" id="lang-JP">🇯🇵<div class="flag-code">JP</div></button>
-      <button class="flag-btn" onclick="cmdLang('KO')" id="lang-KO">🇰🇷<div class="flag-code">KR</div></button>
-      <button class="flag-btn" onclick="cmdLang('ZH')" id="lang-ZH">🇨🇳<div class="flag-code">CN</div></button>
-      <button class="flag-btn" onclick="cmdLang('UA')" id="lang-UA">🇺🇦<div class="flag-code">UA</div></button>
-      <button class="flag-btn" onclick="cmdLang('SV')" id="lang-SV">🇸🇪<div class="flag-code">SE</div></button>
-      <button class="flag-btn" onclick="cmdLang('ID')" id="lang-ID">🇮🇩<div class="flag-code">ID</div></button>
-      <button class="flag-btn" onclick="cmdLang('TH')" id="lang-TH">🇹🇭<div class="flag-code">TH</div></button>
-      <button class="flag-btn" onclick="cmdLang('VN')" id="lang-VN">🇻🇳<div class="flag-code">VN</div></button>
-      <button class="flag-btn" onclick="cmdLang('HI')" id="lang-HI">🇮🇳<div class="flag-code">HI</div></button>
-      <button class="flag-btn" onclick="cmdLang('BR')" id="lang-BR">🇧🇷<div class="flag-code">BR</div></button>
+    <div class="card-header" data-fr="Preset Actif" data-en="Active preset">Preset Actif</div>
+    <div class="preset-strip">
+      <button class="preset-arrow" id="btnPresetPrev" onclick="cmdCyclePreset(-1)" title="Preset précédent">‹</button>
+      <div class="preset-name" id="presetName">—</div>
+      <button class="preset-arrow" id="btnPresetNext" onclick="cmdCyclePreset(1)" title="Preset suivant">›</button>
     </div>
   </div>
 
+  <!-- ── Stats temps réel ─────────────────────────────────────────────────── -->
   <div class="card">
-    <div class="card-header">Système</div>
+    <div class="card-header" data-fr="Stats Live" data-en="Live stats">Stats Live</div>
+    <div class="stats-grid">
+      <div class="stat-chip">
+        <div class="stat-label" data-fr="RMS Bruit" data-en="Noise RMS">RMS Bruit</div>
+        <div class="stat-value" id="statRms">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">SNR</div>
+        <div class="stat-value" id="statSnr">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Voice Focus</div>
+        <div class="stat-value" id="statFocus">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Uptime</div>
+        <div class="stat-value" id="statUptime">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Genre & Volume ───────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header" data-fr="Voix" data-en="Voice">Voix</div>
     <div class="row-split">
       <button class="gender-btn" id="btnGender" onclick="cmdGender()">👩</button>
-      <input type="range" id="volSlider" min="0" max="1.5" step="0.1" oninput="cmdVol(this.value)" />
+      <div>
+        <input type="range" id="volSlider" min="0" max="2" step="0.1" value="1.0"
+               oninput="cmdVol(this.value)">
+        <div class="range-row">
+          <span>0</span>
+          <span><span data-fr="Volume TTS :" data-en="TTS volume:">Volume TTS :</span> <b id="volValue">1.0</b></span>
+          <span>2</span>
+        </div>
+      </div>
     </div>
-    <div class="range-row"><span>Volume TTS</span><span id="volValue">1.0</span></div>
+    <div style="margin-top:8px;">
+      <button class="btn wide" id="btnWarmup" onclick="cmdWarmup()" style="height:44px;">
+        <span><span data-fr="WARMUP VOICE" data-en="WARM UP VOICE">WARMUP VOICE</span></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Langue ────────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header" data-fr="Langue cible" data-en="Target language">Langue cible</div>
+    <div class="flag-grid">
+      <button class="flag-btn" id="lang-FR" onclick="cmdLang('FR')">🇫🇷<span class="flag-code">FR</span></button>
+      <button class="flag-btn" id="lang-EN" onclick="cmdLang('EN')">🇬🇧<span class="flag-code">EN</span></button>
+      <button class="flag-btn" id="lang-ES" onclick="cmdLang('ES')">🇪🇸<span class="flag-code">ES</span></button>
+      <button class="flag-btn" id="lang-DE" onclick="cmdLang('DE')">🇩🇪<span class="flag-code">DE</span></button>
+      <button class="flag-btn" id="lang-IT" onclick="cmdLang('IT')">🇮🇹<span class="flag-code">IT</span></button>
+      <button class="flag-btn" id="lang-PT" onclick="cmdLang('PT')">🇵🇹<span class="flag-code">PT</span></button>
+      <button class="flag-btn" id="lang-RU" onclick="cmdLang('RU')">🇷🇺<span class="flag-code">RU</span></button>
+      <button class="flag-btn" id="lang-JA" onclick="cmdLang('JA')">🇯🇵<span class="flag-code">JA</span></button>
+      <button class="flag-btn" id="lang-KO" onclick="cmdLang('KO')">🇰🇷<span class="flag-code">KO</span></button>
+      <button class="flag-btn" id="lang-ZH" onclick="cmdLang('ZH')">🇨🇳<span class="flag-code">ZH</span></button>
+      <button class="flag-btn" id="lang-TR" onclick="cmdLang('TR')">🇹🇷<span class="flag-code">TR</span></button>
+      <button class="flag-btn" id="lang-PL" onclick="cmdLang('PL')">🇵🇱<span class="flag-code">PL</span></button>
+      <button class="flag-btn" id="lang-NL" onclick="cmdLang('NL')">🇳🇱<span class="flag-code">NL</span></button>
+      <button class="flag-btn" id="lang-SV" onclick="cmdLang('SV')">🇸🇪<span class="flag-code">SV</span></button>
+      <button class="flag-btn" id="lang-AR" onclick="cmdLang('AR')">🇸🇦<span class="flag-code">AR</span></button>
+    </div>
+  </div>
+
+  <!-- ── Actions urgentes ─────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header" data-fr="Actions" data-en="Actions">Actions</div>
+    <div class="control-grid">
+      <button class="btn warn" onclick="cmdFeature('seamless')">
+        <span class="icon">🔗</span><span>SEAMLESS</span>
+      </button>
+      <button class="btn panic" id="btnPanic" onclick="cmdPanic()">
+        <span class="icon">⚠️</span><span>PANIC RESET</span>
+      </button>
+    </div>
   </div>
 
   <div id="toast"></div>
 
   <script>
+    // ─── State ───────────────────────────────────────────────────────────────
+    const cooldownUntil = {};
     const inflight = new Set();
-    const cooldownUntil = Object.create(null);
     let currentGender = 'FEMALE';
+    let currentPresetIndex = 0;
+    let presetList = [];
 
+    // ─── Helpers ─────────────────────────────────────────────────────────────
     function nowMs() { return Date.now(); }
 
     function toast(msg, type = 'ok') {
       const t = document.getElementById('toast');
       t.className = type + ' show';
       t.textContent = msg;
-      setTimeout(() => t.className = '', 1400);
+      setTimeout(() => t.className = '', 1600);
     }
 
     function withCooldown(key, ms) {
@@ -337,7 +321,7 @@
       return true;
     }
 
-    async function postJson(url, data = {}, timeoutMs = 4200) {
+    async function postJson(url, data = {}, timeoutMs = 4500) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
@@ -350,12 +334,10 @@
         let payload = {};
         try { payload = await res.json(); } catch (_) {}
         return { ok: res.ok, status: res.status, data: payload };
-      } finally {
-        clearTimeout(timer);
-      }
+      } finally { clearTimeout(timer); }
     }
 
-    async function simpleFetch(url, timeoutMs = 4200) {
+    async function simpleFetch(url, timeoutMs = 4500) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
@@ -363,9 +345,7 @@
         let payload = {};
         try { payload = await res.json(); } catch (_) {}
         return { ok: res.ok, status: res.status, data: payload };
-      } finally {
-        clearTimeout(timer);
-      }
+      } finally { clearTimeout(timer); }
     }
 
     function lockBtn(id, locked) {
@@ -377,28 +357,24 @@
       if (inflight.has(key)) return;
       inflight.add(key);
       lockBtn(btnId, true);
-      try {
-        await fn();
-      } catch (e) {
-        toast('Action indisponible', 'err');
-      } finally {
-        inflight.delete(key);
-        lockBtn(btnId, false);
-      }
+      try { await fn(); }
+      catch (e) { toast('Action indisponible', 'err'); }
+      finally { inflight.delete(key); lockBtn(btnId, false); }
     }
 
+    // ─── Actions ─────────────────────────────────────────────────────────────
     function cmdToggle() {
       if (!withCooldown('main', 450)) return;
       guardedAction('main', 'btnMain', async () => {
         const r = await postJson('/toggle', {});
-        if (!r.ok) return toast('Main: erreur', 'err');
+        if (!r.ok) toast('Erreur toggle', 'err');
       });
     }
 
     function cmdFeature(feat) {
       const k = 'feat_' + feat;
       if (!withCooldown(k, 350)) return;
-      guardedAction(k, feat === 'turbo' ? 'btnTurbo' : '', async () => {
+      guardedAction(k, '', async () => {
         const r = await postJson('/config/toggle_feature', { feature: feat });
         if (!r.ok) toast('Feature indisponible', 'err');
       });
@@ -409,7 +385,7 @@
       const curr = document.getElementById('btnBypass').classList.contains('active');
       guardedAction('bypass', 'btnBypass', async () => {
         const r = await postJson('/module/bypass/toggle', { toggle: !curr });
-        if (!r.ok) return toast('Bypass indisponible', 'err');
+        if (!r.ok) toast('Bypass indisponible', 'err');
       });
     }
 
@@ -418,7 +394,7 @@
       const curr = document.getElementById('btnMic').classList.contains('active');
       guardedAction('listen', 'btnMic', async () => {
         const r = await postJson('/audio/listen/toggle', { toggle: !curr });
-        if (!r.ok) return toast('Écoute indisponible', 'err');
+        if (!r.ok) toast((lang==='en' ? 'Listening unavailable' : 'Écoute indisponible'), 'err');
       });
     }
 
@@ -427,8 +403,9 @@
       document.querySelectorAll('.flag-btn').forEach(b => b.classList.remove('selected'));
       const btn = document.getElementById('lang-' + langCode);
       if (btn) btn.classList.add('selected');
-      postJson('/config/target', { lang: langCode }).then((r) => {
+      postJson('/config/target', { lang: langCode }).then(r => {
         if (!r.ok) toast('Langue: erreur', 'err');
+        else toast('🌍 ' + langCode);
       });
     }
 
@@ -436,7 +413,7 @@
       const next = currentGender === 'FEMALE' ? 'MALE' : 'FEMALE';
       currentGender = next;
       document.getElementById('btnGender').textContent = next === 'FEMALE' ? '👩' : '👨';
-      postJson('/config/gender_update', { gender: next }).then((r) => {
+      postJson('/config/gender_update', { gender: next }).then(r => {
         if (!r.ok) toast('Genre: erreur', 'err');
       });
     }
@@ -449,23 +426,17 @@
     }
 
     function cmdPanic() {
-      if (!withCooldown('panic', 3000)) {
-        toast('Attends avant un nouveau PANIC', 'warn');
-        return;
-      }
-      if (!confirm('Déclencher PANIC RESET ?')) return;
+      if (!withCooldown('panic', 3000)) { toast('Attends avant un nouveau PANIC', 'warn'); return; }
+      if (!confirm((lang==='en' ? 'Trigger PANIC RESET?' : 'Déclencher PANIC RESET ?'))) return;
       guardedAction('panic', 'btnPanic', async () => {
         const r = await postJson('/panic', {});
-        if (!r.ok) return toast('Panic: erreur', 'err');
-        toast('Panic reset envoyé', 'warn');
+        if (!r.ok) toast('Panic: erreur', 'err');
+        else toast((lang==='en' ? 'Panic reset sent' : 'Panic reset envoyé'), 'warn');
       });
     }
 
     function cmdWarmup() {
-      if (!withCooldown('warmup', 5000)) {
-        toast('Warmup déjà lancé, patiente…', 'warn');
-        return;
-      }
+      if (!withCooldown('warmup', 5000)) { toast('Warmup en cooldown…', 'warn'); return; }
       guardedAction('warmup', 'btnWarmup', async () => {
         const r = await postJson('/kommz/xtts/warmup', {});
         if (r.status === 429) {
@@ -474,69 +445,131 @@
           return toast('Warmup en cooldown (' + retry + 's)', 'warn');
         }
         if (!r.ok) return toast('Warmup indisponible', 'err');
-        const retry = Number(r.data?.retry_after || 0);
-        if (retry > 0) cooldownUntil['warmup'] = nowMs() + retry * 1000;
-        toast('Warmup envoyé', 'ok');
+        toast((lang==='en' ? 'Warm-up sent' : 'Warmup envoyé'));
       });
     }
 
+    // ── Cycle de preset V5 ──────────────────────────────────────────────────
+    // Route à ajouter dans vtp_core.py :
+    //   @app.route('/preset/cycle', methods=['POST'])
+    //   def preset_cycle_route():
+    //       data = request.get_json() or {}
+    //       direction = int(data.get('direction', 1))
+    //       cycle_preset_action(direction)   # fonction déjà existante
+    //       return jsonify({"ok": True, "preset": AUDIO_CONFIG.get("expressive_profile","")})
+    function cmdCyclePreset(direction) {
+      if (!withCooldown('preset', 300)) return;
+      postJson('/preset/cycle', { direction }).then(r => {
+        if (r.ok && r.data?.preset) {
+          document.getElementById('presetName').textContent = r.data.preset;
+          toast('🎛️ ' + r.data.preset);
+        }
+      }).catch(() => {
+        // Fallback si la route n'existe pas encore
+        toast((lang==='en' ? 'Route /preset/cycle missing' : 'Route /preset/cycle manquante'), 'warn');
+      });
+    }
+
+    // ─── UI sync ─────────────────────────────────────────────────────────────
     function paintButton(id, active, green = false) {
       const el = document.getElementById(id);
       if (!el) return;
-      el.classList.toggle('active', !!active && !green);
+      el.classList.toggle('active',       !!active && !green);
       el.classList.toggle('active-green', !!active && green);
     }
 
-    function syncUI(data) {
+    function fmtUptime(seconds) {
+      if (!seconds || seconds < 0) return '—';
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      if (h > 0) return `${h}h${String(m).padStart(2,'0')}m`;
+      return `${m}m${String(s).padStart(2,'0')}s`;
+    }
+
+    function colorClass(val, goodBelow, warnBelow) {
+      if (val <= goodBelow) return 'ok';
+      if (val <= warnBelow) return 'warn';
+      return 'err';
+    }
+
+    function syncUI(d) {
       document.getElementById('statusPill').classList.add('online');
       document.getElementById('statusText').textContent = 'ONLINE';
 
-      paintButton('btnMain', !!data.is_active, true);
-      paintButton('btnMic', !!data.is_listening);
-      paintButton('btnTurbo', !!data.turbo_latency_active);
-      paintButton('btnBypass', !!data.bypass_mode_active);
+      paintButton('btnMain', !!d.is_active, true);
+      paintButton('btnMic',   !!d.is_listening);
+      paintButton('btnTurbo', !!d.turbo_latency_active);
+      paintButton('btnBypass', !!d.bypass_mode_active);
 
       const main = document.getElementById('btnMain');
-      main.querySelector('.icon').textContent = data.is_active ? '⚡' : '🔌';
-      main.lastElementChild.textContent = data.is_active ? 'MAIN ON' : 'MAIN OFF';
+      main.querySelector('.icon').textContent = d.is_active ? '⚡' : '🔌';
+      main.lastElementChild.textContent = d.is_active ? 'MAIN ON' : 'MAIN OFF';
 
-      if (data.gender) {
-        currentGender = data.gender;
-        document.getElementById('btnGender').textContent = data.gender === 'FEMALE' ? '👩' : '👨';
+      // Genre
+      if (d.gender) {
+        currentGender = d.gender;
+        document.getElementById('btnGender').textContent = d.gender === 'FEMALE' ? '👩' : '👨';
       }
 
-      const lang = (data.target_lang || 'EN').toUpperCase();
-      const targetId = 'lang-' + lang;
-      const activeBtn = document.querySelector('.flag-btn.selected');
-      if (!activeBtn || activeBtn.id !== targetId) {
-        document.querySelectorAll('.flag-btn').forEach(b => b.classList.remove('selected'));
-        const b = document.getElementById(targetId);
-        if (b) b.classList.add('selected');
-      }
+      // Langue
+      const lang = (d.target_lang || 'EN').toUpperCase();
+      document.querySelectorAll('.flag-btn').forEach(b => b.classList.remove('selected'));
+      const lb = document.getElementById('lang-' + lang);
+      if (lb) lb.classList.add('selected');
 
+      // Volume
       const slider = document.getElementById('volSlider');
       if (document.activeElement !== slider) {
-        const vol = Number(data.tts_volume ?? 1.0);
+        const vol = Number(d.tts_volume ?? 1.0);
         slider.value = String(vol);
         document.getElementById('volValue').textContent = vol.toFixed(1);
       }
 
+      // Preset
+      const pn = d.expressive_profile || d.scene_active_name || '';
+      if (pn) document.getElementById('presetName').textContent = pn;
+
+      // Stats live
+      const rmsEl  = document.getElementById('statRms');
+      const snrEl  = document.getElementById('statSnr');
+      const fcsEl  = document.getElementById('statFocus');
+      const uptEl  = document.getElementById('statUptime');
+
+      if (d.rms_db !== undefined && rmsEl) {
+        const rms = Number(d.rms_db || 0);
+        rmsEl.textContent = rms.toFixed(1) + ' dB';
+        rmsEl.className = 'stat-value ' + colorClass(Math.abs(rms), 30, 50);
+      }
+      if (d.snr_db !== undefined && snrEl) {
+        const snr = Number(d.snr_db || 0);
+        snrEl.textContent = snr.toFixed(1) + ' dB';
+        snrEl.className = 'stat-value ' + (snr >= 10 ? 'ok' : snr >= 5 ? 'warn' : 'err');
+      }
+      if (d.voice_focus_mode !== undefined && fcsEl) {
+        fcsEl.textContent = String(d.voice_focus_mode || '—').toUpperCase();
+        fcsEl.className = 'stat-value ok';
+      }
+      if (d.session_uptime_seconds !== undefined && uptEl) {
+        uptEl.textContent = fmtUptime(Number(d.session_uptime_seconds || 0));
+        uptEl.className = 'stat-value';
+      }
+
+      // Voice pill
       const voicePill = document.getElementById('voicePill');
-      const voiceText = document.getElementById('voiceText');
-      const voiceOn = (data.voice_licensed === true || data.voice_active === true);
-      voicePill.classList.toggle('voice-on', voiceOn);
-      voicePill.classList.toggle('voice-off', !voiceOn);
-      voiceText.textContent = voiceOn ? 'VOICE ON' : 'VOICE OFF';
+      const voiceOn = d.voice_licensed === true || d.voice_active === true;
+      voicePill.className = 'status-pill ' + (voiceOn ? 'voice-on' : 'voice-off');
+      document.getElementById('voiceText').textContent = voiceOn ? 'VOICE ✓' : 'VOICE ✗';
 
-      const xttsState = String(data.xtts_runtime_state || '').toLowerCase();
-      const xttsPill = document.getElementById('xttsPill');
-      const xttsText = document.getElementById('xttsText');
+      // XTTS pill
+      const xttsState = String(d.xtts_runtime_state || '').toLowerCase();
       const ready = ['ready', 'warm', 'active'].includes(xttsState);
-      xttsPill.classList.toggle('warmup-ready', ready);
-      xttsPill.classList.toggle('warmup-cold', !ready);
-      xttsText.textContent = ready ? 'XTTS READY' : 'XTTS COLD';
+      const xttsPill = document.getElementById('xttsPill');
+      xttsPill.className = 'status-pill ' + (ready ? 'warmup-ready' : 'warmup-cold');
+      document.getElementById('xttsText').textContent = ready ? 'XTTS ✓' : 'XTTS ○';
 
-      const retry = Number(data.xtts_warmup_retry_after || 0);
+      // Warmup btn
+      const retry = Number(d.xtts_warmup_retry_after || 0);
       const warmBtn = document.getElementById('btnWarmup');
       if (retry > 0) {
         warmBtn.disabled = true;
@@ -550,23 +583,52 @@
     function setOffline() {
       document.getElementById('statusPill').classList.remove('online');
       document.getElementById('statusText').textContent = 'OFFLINE';
-      document.getElementById('xttsPill').classList.remove('warmup-ready');
-      document.getElementById('xttsPill').classList.add('warmup-cold');
+      document.getElementById('xttsPill').className = 'status-pill warmup-cold';
       document.getElementById('xttsText').textContent = 'XTTS ?';
     }
 
+    // ─── Heartbeat ───────────────────────────────────────────────────────────
     async function heartbeat() {
       try {
-        const r = await simpleFetch('/status', 3600);
+        const r = await simpleFetch('/status', 3800);
         if (!r.ok || !r.data) return setOffline();
         syncUI(r.data);
-      } catch {
-        setOffline();
-      }
+      } catch { setOffline(); }
     }
 
     heartbeat();
-    setInterval(heartbeat, 900);
+    setInterval(heartbeat, 950);
   </script>
+
+<button id="remoteLangBtn" type="button" onclick="toggleRemoteLang()"
+        style="position:fixed; top:10px; right:10px; z-index:9999;
+               background:var(--surface-2); color:var(--muted);
+               border:1px solid var(--border); border-radius:8px;
+               padding:6px 12px; font-size:12px; font-weight:600;
+               cursor:pointer;">English</button>
+<script>
+// Premiere ouverture : on suit la langue du telephone. Le choix explicite
+// prime ensuite. Les parentheses sont necessaires : || passe avant ? :
+var lang = localStorage.getItem('kommz_lang')
+  || ((navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+
+function applyRemoteLang() {
+  document.querySelectorAll('[data-fr]').forEach(function (el) {
+    el.innerHTML = lang === 'en'
+      ? (el.getAttribute('data-en') || el.getAttribute('data-fr'))
+      : el.getAttribute('data-fr');
+  });
+  var b = document.getElementById('remoteLangBtn');
+  if (b) b.textContent = lang === 'fr' ? 'English' : 'Fran\u00e7ais';
+  document.documentElement.lang = lang;
+}
+function toggleRemoteLang() {
+  lang = lang === 'fr' ? 'en' : 'fr';
+  localStorage.setItem('kommz_lang', lang);
+  applyRemoteLang();
+}
+document.addEventListener('DOMContentLoaded', applyRemoteLang);
+window.addEventListener('load', applyRemoteLang);
+</script>
 </body>
 </html>

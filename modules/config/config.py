@@ -10,6 +10,7 @@ pour éviter les imports circulaires.
 
 import os
 import sys
+import copy
 import json
 import time
 import re
@@ -23,7 +24,7 @@ from pathlib import Path
 
 DEFAULT_KOMMZ_GPT_API_URL = os.environ.get(
     "KOMMZ_DEFAULT_GPT_API_URL",
-    "https://kommz-innovations--kommz-voice-gptsovits-tts.modal.run",
+    "",
 ).strip().rstrip("/")
 
 # ============================================================================
@@ -145,7 +146,15 @@ def _merge_missing_template_settings() -> None:
         current = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         if not isinstance(template, dict) or not isinstance(current, dict):
             return
-        missing = {key: value for key, value in template.items() if key not in current}
+        # settings_schema_version est exclu : si un template livre avec un
+        # build recent l'injectait dans un ancien profil, la migration serait
+        # consideree comme deja faite et les defauts corriges ne seraient
+        # jamais appliques. Seul _apply_settings_migrations ecrit cette cle.
+        missing = {
+            key: value
+            for key, value in template.items()
+            if key not in current and key != "settings_schema_version"
+        }
         if missing:
             current.update(missing)
             CONFIG_FILE.write_text(
@@ -173,7 +182,7 @@ print(f"[CONFIG] Fichier existe : {CONFIG_FILE.exists()}", file=sys.stderr, flus
 # EDITION PROFILE CONSTANTS
 # ============================================================================
 
-EDITION_PROFILE = str(os.environ.get("KOMMZ_EDITION_PROFILE", "private") or "private").strip().lower()
+EDITION_PROFILE = str(os.environ.get("KOMMZ_EDITION_PROFILE", "community") or "private").strip().lower()
 if EDITION_PROFILE not in {"private", "community"}:
     EDITION_PROFILE = "private"
 
@@ -188,26 +197,26 @@ CLOUD_FEATURES_ENABLED = str(
 # DEFAULT KOMMZ CLOUD URLS
 # ============================================================================
 
-DEFAULT_KOMMZ_VOICE_URL = "https://kommzvoice.onrender.com"
-DEFAULT_KOMMZ_SYNTHESIS_URL = "https://kommz-innovations--kommz-voice-gptsovits-tts.modal.run"
-DEFAULT_KOMMZ_WHISPER_URL = "https://kommzvoice.onrender.com"
-DEFAULT_KOMMZ_HEALTH_URL = "https://kommzvoice.onrender.com/health"
-DEFAULT_KOMMZ_WARMUP_URL = "https://kommzvoice.onrender.com/warmup"
-DEFAULT_KOMMZ_GENERATE_URL = "https://kommzvoice.onrender.com/generate"
-DEFAULT_KOMMZ_SYNTHESIS_ENDPOINT = "https://kommzvoice.onrender.com/synthesize"
-DEFAULT_KOMMZ_WHISPER_ENDPOINT = "https://kommzvoice.onrender.com/transcribe"
-DEFAULT_KOMMZ_VOICE_CLONE_URL = "https://kommzvoice.onrender.com/clone"
-DEFAULT_KOMMZ_VOICE_LIST_URL = "https://kommzvoice.onrender.com/voices"
-DEFAULT_KOMMZ_VOICE_DELETE_URL = "https://kommzvoice.onrender.com/delete"
-DEFAULT_KOMMZ_VOICE_PREVIEW_URL = "https://kommzvoice.onrender.com/preview"
-DEFAULT_KOMMZ_VOICE_DOWNLOAD_URL = "https://kommzvoice.onrender.com/download"
-DEFAULT_KOMMZ_VOICE_UPLOAD_URL = "https://kommzvoice.onrender.com/upload"
-DEFAULT_KOMMZ_VOICE_SHARE_URL = "https://kommzvoice.onrender.com/share"
-DEFAULT_KOMMZ_VOICE_IMPORT_URL = "https://kommzvoice.onrender.com/import"
-DEFAULT_KOMMZ_VOICE_EXPORT_URL = "https://kommzvoice.onrender.com/export"
-DEFAULT_KOMMZ_VOICE_SEARCH_URL = "https://kommzvoice.onrender.com/search"
-DEFAULT_KOMMZ_VOICE_RATE_URL = "https://kommzvoice.onrender.com/rate"
-DEFAULT_KOMMZ_VOICE_REPORT_URL = "https://kommzvoice.onrender.com/report"
+DEFAULT_KOMMZ_VOICE_URL = ""
+DEFAULT_KOMMZ_SYNTHESIS_URL = ""
+DEFAULT_KOMMZ_WHISPER_URL = ""
+DEFAULT_KOMMZ_HEALTH_URL = ""
+DEFAULT_KOMMZ_WARMUP_URL = ""
+DEFAULT_KOMMZ_GENERATE_URL = ""
+DEFAULT_KOMMZ_SYNTHESIS_ENDPOINT = ""
+DEFAULT_KOMMZ_WHISPER_ENDPOINT = ""
+DEFAULT_KOMMZ_VOICE_CLONE_URL = ""
+DEFAULT_KOMMZ_VOICE_LIST_URL = ""
+DEFAULT_KOMMZ_VOICE_DELETE_URL = ""
+DEFAULT_KOMMZ_VOICE_PREVIEW_URL = ""
+DEFAULT_KOMMZ_VOICE_DOWNLOAD_URL = ""
+DEFAULT_KOMMZ_VOICE_UPLOAD_URL = ""
+DEFAULT_KOMMZ_VOICE_SHARE_URL = ""
+DEFAULT_KOMMZ_VOICE_IMPORT_URL = ""
+DEFAULT_KOMMZ_VOICE_EXPORT_URL = ""
+DEFAULT_KOMMZ_VOICE_SEARCH_URL = ""
+DEFAULT_KOMMZ_VOICE_RATE_URL = ""
+DEFAULT_KOMMZ_VOICE_REPORT_URL = ""
 
 
 # ============================================================================
@@ -281,6 +290,30 @@ AUDIO_CONFIG = {
     "subtitle_background_opacity": 0.5,
     "privacy_mode": False,
     "privacy_keywords": [],
+    # Drapeaux de modules absents des defauts : sans valeur ici, un poste
+    # neuf lisait False via .get(..., False), et la case restait morte.
+    # auto_update_active est le seul active par defaut : un correctif de
+    # securite que personne ne recoit ne sert a rien. La case reste
+    # decochable dans Modules systeme.
+    # Traduction spéculative : on traduit les partiels Deepgram pour
+    # préchauffer le cache. Aucun texte spéculatif n'est affiché ni prononcé.
+    # Coût : quelques appels de traduction en plus. Mesurer speculative_hits
+    # contre speculative_misses avant de juger si ça sert.
+    "speculative_translation_enabled": True,
+    "speculative_translation_min_gap_s": 0.45,
+    "speculative_translation_min_new_chars": 3,
+    "auto_update_active": True,
+    "auto_context_active": False,
+    "esport_mode_active": False,
+    "privacy_sentinel_active": False,
+    "seamless_prefix_active": False,
+    "shadow_ai_active": False,
+    "smart_marker_active": False,
+    "stealth_mode_active": False,
+    "stream_connect_active": False,
+    "tactical_macros_active": False,
+    "teamsync_ai_active": False,
+    "turbo_latency_active": False,
     "tilt_shield_active": True,
     "smart_commands_active": True,
     "gaming_context_active": True,
@@ -373,13 +406,79 @@ AUDIO_CONFIG = {
 }
 
 
+# ============================================================================
+# SETTINGS SCHEMA VERSION & MIGRATIONS (V5.4)
+# ============================================================================
+# Probleme resolu ici : le fichier utilisateur gagne toujours sur le defaut du
+# code. Un utilisateur qui a deja lance une version precedente garde donc
+# eternellement l'ancienne valeur, meme si on corrige le defaut. C'est ce qui
+# est arrive a auto_update_active (personne ne recevait les mises a jour) puis
+# a speculative_translation_min_new_chars (seuil 6 = zero cache hit mesure).
+#
+# Regle : on ne touche PAS au fichier utilisateur en general. On realigne
+# uniquement les cles listees ci-dessous, une seule fois, quand le profil vient
+# d'une version de schema anterieure. Apres migration, un reglage manuel de
+# l'utilisateur est respecte de nouveau.
+SETTINGS_SCHEMA_VERSION = 1
+
+AUDIO_CONFIG["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
+
+# Copie figee des defauts, prise avant tout chargement de fichier.
+_DEFAULT_AUDIO_CONFIG = copy.deepcopy(AUDIO_CONFIG)
+
+# version de schema cible -> cles a realigner sur le defaut du code
+_SETTINGS_MIGRATIONS = {
+    1: (
+        # Seuil mesure : a 6, le dernier partiel Deepgram (le seul qui a une
+        # chance de correspondre au texte finalise) etait ignore. 3 hits.
+        "speculative_translation_min_new_chars",
+        "speculative_translation_min_gap_s",
+    ),
+}
+
+
+def _apply_settings_migrations(loaded: dict) -> bool:
+    """Realigne les cles dont le defaut a change depuis le schema du profil.
+
+    Retourne True si quelque chose a ete modifie (l'appelant doit sauvegarder).
+    """
+    try:
+        from_version = int(loaded.get("settings_schema_version", 0) or 0)
+    except (TypeError, ValueError):
+        from_version = 0
+
+    if from_version >= SETTINGS_SCHEMA_VERSION:
+        return False
+
+    realigned = []
+    for target in range(from_version + 1, SETTINGS_SCHEMA_VERSION + 1):
+        for key in _SETTINGS_MIGRATIONS.get(target, ()):
+            if key not in _DEFAULT_AUDIO_CONFIG:
+                continue
+            new_value = copy.deepcopy(_DEFAULT_AUDIO_CONFIG[key])
+            if AUDIO_CONFIG.get(key) == new_value:
+                continue
+            AUDIO_CONFIG[key] = new_value
+            realigned.append(f"{key}={new_value!r}")
+
+    AUDIO_CONFIG["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
+    if realigned:
+        print(
+            f"[CONFIG] Migration schema {from_version} -> {SETTINGS_SCHEMA_VERSION} : "
+            + ", ".join(realigned),
+            file=sys.stderr,
+            flush=True,
+        )
+    return True
+
+
 
 
 # ============================================================================
 # LICENSE API CONSTANTS
 # ============================================================================
 
-LICENSE_API_URL = os.environ.get("KOMMZ_LICENSE_API_URL", "https://kommzvoice.onrender.com").strip().rstrip("/")
+LICENSE_API_URL = os.environ.get("KOMMZ_LICENSE_API_URL", "").strip().rstrip("/")
 LICENSE_API_CONNECT_TIMEOUT = float(os.environ.get("KOMMZ_LICENSE_CONNECT_TIMEOUT", "8"))
 LICENSE_API_READ_TIMEOUT = float(os.environ.get("KOMMZ_LICENSE_READ_TIMEOUT", "45"))
 LICENSE_API_RETRIES = int(os.environ.get("KOMMZ_LICENSE_RETRIES", "2"))
@@ -438,6 +537,44 @@ def _repair_payload_strings(value):
         return value
 
 
+# Domaines heberges par Kommz. Une edition Community ne doit jamais les
+# appeler : ce sont nos GPU et notre facture. `/warmup` cote Modal n'exige
+# aucune authentification, donc une URL qui traine dans un profil suffit a
+# allumer un conteneur.
+_KOMMZ_HOSTED_DOMAINS = (
+    "kommzvoice.onrender.com",
+    "kommz-innovations--",
+)
+
+# Cles de configuration portant une adresse de service.
+_COMMUNITY_ENDPOINT_KEYS = (
+    "kommz_voice_url",
+    "kommz_synthesis_url",
+    "kommz_synthesis_endpoint",
+    "kommz_whisper_url",
+    "kommz_whisper_endpoint",
+    "kommz_health_url",
+    "kommz_warmup_url",
+    "kommz_generate_url",
+    "kommz_url",
+    "gpt_api_url",
+    "whisper_api_url",
+)
+
+
+def _is_kommz_hosted_url(value: str) -> bool:
+    """Vrai si l'adresse pointe vers l'infrastructure Kommz.
+
+    Volontairement base sur une liste de domaines plutot que sur une
+    correspondance exacte : les endpoints Modal changent de suffixe selon la
+    fonction appelee (`-tts`, `-clone`, `-warmup`, `-health`).
+    """
+    lowered = str(value or "").strip().lower()
+    if not lowered:
+        return False
+    return any(domain in lowered for domain in _KOMMZ_HOSTED_DOMAINS)
+
+
 def _apply_edition_profile_constraints() -> bool:
     """
     Applique les contraintes de l'édition Community si nécessaire.
@@ -447,16 +584,34 @@ def _apply_edition_profile_constraints() -> bool:
         return False
     
     modified = False
-    
+
     # Désactive les fonctionnalités cloud en Community Edition
     if AUDIO_CONFIG.get("hybrid_activation_active", False):
         AUDIO_CONFIG["hybrid_activation_active"] = False
         modified = True
-    
+
     if AUDIO_CONFIG.get("polyglot_active", False):
         AUDIO_CONFIG["polyglot_active"] = False
         modified = True
-    
+
+    # V5.4 : neutralisation des services heberges par Kommz.
+    #
+    # L'edition Community n'utilise pas notre infrastructure : chaque
+    # utilisateur deploie la sienne. Vider les constantes `DEFAULT_KOMMZ_*`
+    # quand CLOUD_FEATURES_ENABLED est faux ne suffit pas, parce que le
+    # fichier de configuration l'emporte toujours sur les defauts du code.
+    # Un profil copie depuis un modele qui contenait ces URL les conserve
+    # donc indefiniment, et l'utilisateur appelle nos GPU sans le savoir.
+    #
+    # On ne vide QUE les adresses pointant vers nos domaines. L'adresse que
+    # l'utilisateur a configuree lui-meme est laissee intacte : l'effacer a
+    # chaque demarrage rendrait l'edition Community inutilisable.
+    for key in _COMMUNITY_ENDPOINT_KEYS:
+        value = str(AUDIO_CONFIG.get(key, "") or "").strip()
+        if value and _is_kommz_hosted_url(value):
+            AUDIO_CONFIG[key] = ""
+            modified = True
+
     return modified
 
 
@@ -516,9 +671,14 @@ def load_settings():
             AUDIO_CONFIG["ptt_hotkey"] = legacy_ptt_key
         if migrated_ptt_key:
             AUDIO_CONFIG.pop("ptt_key", None)
-        if migrated_ptt_key or (not persisted_ptt_hotkey and legacy_ptt_key):
+
+        # V5.4 : realignement unique des defauts corriges (voir
+        # _SETTINGS_MIGRATIONS). Doit tourner avant la sauvegarde ci-dessous.
+        migrated_schema = _apply_settings_migrations(loaded)
+
+        if migrated_schema or migrated_ptt_key or (not persisted_ptt_hotkey and legacy_ptt_key):
             save_settings()
-        
+
         _apply_edition_profile_constraints()
         
     except FileNotFoundError:

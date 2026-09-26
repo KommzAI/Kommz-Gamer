@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guide Streamer - Kommz Gamer V4.9</title>
+    <title data-fr="Guide Streamer - Kommz Gamer V5.3" data-en="Streamer Guide - Kommz Gamer V5.3">Guide Streamer - Kommz Gamer V5.3</title>
     <style>
         :root { 
             --bg-dark: #09090b; 
@@ -82,207 +82,251 @@
     </style>
 </head>
 <body>
+<div style="position:fixed; top:12px; right:16px; z-index:9999;">
+  <button onclick="toggleGuideLang()" id="guideLangBtn"
+    style="background:#1e293b; border:1px solid #334155; color:#94a3b8;
+           padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">
+    🇬🇧 English
+  </button>
+</div>
+<script>
+(function(){
+  // Premiere ouverture : on suit la langue du systeme. Le choix
+// explicite de l'utilisateur, une fois fait, prime toujours.
+// Les parentheses sont necessaires : || est prioritaire sur ? :
+  var lang = localStorage.getItem('kommz_lang')
+    || ((navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+  function apply() {
+    document.querySelectorAll('[data-fr]').forEach(function(el) {
+      var val = lang === 'en' ? (el.getAttribute('data-en') || el.getAttribute('data-fr')) : el.getAttribute('data-fr');
+      if (el.tagName === 'TITLE') { document.title = val; }
+      else { el.innerHTML = val; }
+    });
+    var btn = document.getElementById('guideLangBtn');
+    if(btn) btn.textContent = lang === 'fr' ? '🇬🇧 English' : '🇫🇷 Fran\u00e7ais';
+  }
+  window.toggleGuideLang = function() {
+    lang = lang === 'fr' ? 'en' : 'fr';
+    localStorage.setItem('kommz_lang', lang);
+    apply();
+  };
+  document.addEventListener('DOMContentLoaded', apply);
+  window.addEventListener('load', apply);
+  setTimeout(apply, 500);
+  setTimeout(apply, 1500);
+})();
+</script>
+
     <div class="container">
         <header>
-            <h1>GUIDE STREAMER & OBS</h1>
-            <span class="subtitle">Intégration Pro • Sous-titres • Discrétion</span>
+            <h1><span data-fr="GUIDE STREAMER & OBS" data-en="STREAMER & OBS GUIDE">GUIDE STREAMER & OBS</span></h1>
+            <span class="subtitle"><span data-fr="Intégration Pro • Sous-titres • Discrétion" data-en="Pro Integration • Subtitles • Discretion">Intégration Pro • Sous-titres • Discrétion</span></span>
         </header>
 
         <div class="alert-tip">
-            👋 <strong>Pour les Créateurs :</strong> Ce guide vous explique comment afficher les traductions directement sur votre stream (OBS/Streamlabs) sans capturer l'overlay Windows.
+            👋 <strong><span data-fr="Pour les Créateurs :" data-en="For Creators:">Pour les Créateurs :</span></strong> <span data-fr="Ce guide vous explique comment afficher les traductions directement sur votre stream (OBS/Streamlabs) sans capturer l'overlay Windows." data-en="This guide explains how to display translations directly on your stream (OBS/Streamlabs) without capturing the Windows overlay.">Ce guide vous explique comment afficher les traductions directement sur votre stream (OBS/Streamlabs) sans capturer l'overlay Windows.</span>
         </div>
 
-        <h2 id="licence">0. Licence & Services Cloud (Nouveau)</h2>
+        <h2 id="licence"><span data-fr="0. Licence & Services Cloud (Nouveau)" data-en="0. License & Cloud Services (New)">0. Licence & Services Cloud (Nouveau)</span></h2>
         <div class="card">
             <div class="step-container">
                 <div class="step-circle">1</div>
                 <div class="step-content">
-                    <strong>Activez vos clés dans l'onglet Licence :</strong>
-                    Clé <code>VTP-...</code> pour le logiciel, puis <code>VCV-...</code> pour débloquer Kommz Voice Cloud.
+                    <strong><span data-fr="Activez vos clés dans l'onglet Licence :" data-en="Activate your keys in the License tab:">Activez vos clés dans l'onglet Licence :</span></strong>
+                    <span data-fr="Clé" data-en="Key">Clé</span> <code>VTP-...</code> <span data-fr="pour le logiciel, puis" data-en="for the software, then">pour le logiciel, puis</span> <code>VCV-...</code> <span data-fr="pour débloquer Kommz Voice Cloud." data-en="to unlock Kommz Voice Cloud.">pour débloquer Kommz Voice Cloud.</span>
                 </div>
             </div>
             <div class="step-container">
                 <div class="step-circle">2</div>
                 <div class="step-content">
-                    <strong>Whisper / XTTS doivent être en ligne :</strong>
-                    En cas d'erreur de transcription ou de clone, vérifiez les URLs Modal configurées côté serveur.
+                    <strong><span data-fr="Whisper / XTTS doivent être en ligne :" data-en="Whisper / XTTS must be online:">Whisper / XTTS doivent être en ligne :</span></strong>
+                    <span data-fr="En cas d'erreur de transcription ou de clone, vérifiez les URLs Modal configurées côté serveur." data-en="If transcription or clone errors occur, check the Modal URLs configured server-side.">En cas d'erreur de transcription ou de clone, vérifiez les URLs Modal configurées côté serveur.</span>
                 </div>
             </div>
             <div class="step-container">
                 <div class="step-circle">3</div>
                 <div class="step-content">
-                    <strong>Le mode Hybrid est optionnel mais utile pour le rendu vocal :</strong>
-                    il améliore le timbre et la couleur de voix. Il est surtout utile si vous voulez un rendu plus naturel sur la sortie vocale, sans changer votre configuration OBS.
+                    <strong><span data-fr="Le mode Hybrid est optionnel mais utile pour le rendu vocal :" data-en="Hybrid mode is optional but useful for vocal rendering:">Le mode Hybrid est optionnel mais utile pour le rendu vocal :</span></strong>
+                    <span data-fr="il améliore le timbre et la couleur de voix. Il est surtout utile si vous voulez un rendu plus naturel sur la sortie vocale, sans changer votre configuration OBS." data-en="it improves tone and voice color. It is mainly useful if you want a more natural rendering on the voice output, without changing your OBS configuration.">il améliore le timbre et la couleur de voix. Il est surtout utile si vous voulez un rendu plus naturel sur la sortie vocale, sans changer votre configuration OBS.</span>
                 </div>
             </div>
             <div class="alert-obs">
-                <strong>Variables Render à vérifier :</strong><br>
-                <code>MODAL_WHISPER_URL</code> (Whisper), <code>MODAL_XTTS_URL</code> (XTTS) et <code>MODAL_GPTSOVITS_URL</code> (Hybrid distant si activé).
+                <strong><span data-fr="Variables Render à vérifier :" data-en="Render Variables to check:">Variables Render à vérifier :</span></strong><br>
+                <code>MODAL_WHISPER_URL</code> (Whisper), <code>MODAL_XTTS_URL</code> <span data-fr="(XTTS) et" data-en="(XTTS) and">(XTTS) et</span> <code>MODAL_GPTSOVITS_URL</code> <span data-fr="(Hybrid distant si activé)." data-en="(remote Hybrid if enabled).">(Hybrid distant si activé).</span>
             </div>
         </div>
 
-        <h2 id="hybrid" style="border-color: var(--success);">I.bis Mode Hybrid (Rendu Vocal)</h2>
+        <h2 id="hybrid" style="border-color: var(--success);"><span data-fr="I.bis Mode Hybrid (Rendu Vocal)" data-en="I.bis Hybrid Mode (Vocal Rendering)">I.bis Mode Hybrid (Rendu Vocal)</span></h2>
         <div class="card" style="border-left: 4px solid var(--success);">
             <div class="step-container">
                 <div class="step-circle">1</div>
                 <div class="step-content">
-                    <strong>Activez Hybrid dans l'onglet Intelligence Artificielle :</strong>
-                    ce mode est recommande si vous voulez un meilleur timbre et une voix plus naturelle en sortie.
+                    <strong><span data-fr="Activez Hybrid dans l'onglet Intelligence Artificielle :" data-en="Activate Hybrid in the Artificial Intelligence tab:">Activez Hybrid dans l'onglet Intelligence Artificielle :</span></strong>
+                    <span data-fr="ce mode est recommande si vous voulez un meilleur timbre et une voix plus naturelle en sortie." data-en="this mode is recommended if you want a better tone and a more natural output voice.">ce mode est recommande si vous voulez un meilleur timbre et une voix plus naturelle en sortie.</span>
                 </div>
             </div>
             <div class="step-container">
                 <div class="step-circle">2</div>
                 <div class="step-content">
-                    <strong>Renseignez une référence audio propre :</strong>
-                    utilisez une courte référence vocale propre et exploitable. Sans référence valide, le logiciel retombera sur le flux vocal standard.
+                    <strong><span data-fr="Renseignez une référence audio propre :" data-en="Provide a clean audio reference:">Renseignez une référence audio propre :</span></strong>
+                    <span data-fr="utilisez une courte référence vocale propre et exploitable. Sans référence valide, le logiciel retombera sur le flux vocal standard." data-en="use a short, clean and usable vocal reference. Without a valid reference, the software will fall back to the standard vocal stream.">utilisez une courte référence vocale propre et exploitable. Sans référence valide, le logiciel retombera sur le flux vocal standard.</span>
                 </div>
             </div>
             <div class="step-container">
                 <div class="step-circle">3</div>
                 <div class="step-content">
-                    <strong>Langues conseillees :</strong>
-                    FR, EN, JA, KO et ZH. Pour les autres langues, le logiciel peut revenir automatiquement sur le pipeline vocal classique.
+                    <strong><span data-fr="Langues conseillees :" data-en="Recommended languages:">Langues conseillees :</span></strong>
+                    <span data-fr="FR, EN, JA, KO et ZH. Pour les autres langues, le logiciel peut revenir automatiquement sur le pipeline vocal classique." data-en="FR, EN, JA, KO and ZH. For other languages, the software may automatically fall back to the classic vocal pipeline.">FR, EN, JA, KO et ZH. Pour les autres langues, le logiciel peut revenir automatiquement sur le pipeline vocal classique.</span>
                 </div>
             </div>
             <div class="alert-tip" style="margin-bottom:0;">
-                Le mode Hybrid change la qualité de la voix, pas la méthode d'affichage dans OBS. Vos sous-titres continuent de fonctionner via <code>obs_subtitles.txt</code>.
+                <span data-fr="Le mode Hybrid change la qualité de la voix, pas la méthode d'affichage dans OBS. Vos sous-titres continuent de fonctionner via obs_subtitles.txt." data-en="Hybrid mode changes voice quality, not the display method in OBS. Your subtitles continue to work via obs_subtitles.txt.">Le mode Hybrid change la qualité de la voix, pas la méthode d'affichage dans OBS. Vos sous-titres continuent de fonctionner via obs_subtitles.txt.</span>
             </div>
             <div class="alert-tip" style="margin-top:15px; margin-bottom:0; border-left-color: var(--obs);">
-                <strong>Option OBS alternative (Source Navigateur) :</strong><br>
-                Si vous préférez un rendu "overlay" sans GDI+, vous pouvez ajouter une <strong>Source Navigateur</strong> dans OBS avec l’URL :
+                <strong><span data-fr="Option OBS alternative (Source Navigateur) :" data-en="Alternative OBS option (Browser Source):">Option OBS alternative (Source Navigateur) :</span></strong><br>
+                <span data-fr="Si vous préférez un rendu &quot;overlay&quot; sans GDI+, vous pouvez ajouter une" data-en="If you prefer an &quot;overlay&quot; rendering without GDI+, you can add a">Si vous préférez un rendu "overlay" sans GDI+, vous pouvez ajouter une</span> <strong><span data-fr="Source Navigateur" data-en="Browser Source">Source Navigateur</span></strong> <span data-fr="dans OBS avec l’URL :" data-en="in OBS with the URL:">dans OBS avec l’URL :</span>
                 <code>http://127.0.0.1:8770/overlay.html</code>.<br>
-                Les couleurs <strong>MOI</strong> / <strong>ALLIÉS</strong> se règlent dans l’onglet <em>Overlay & Couleurs</em> de Kommz.
+                <span data-fr="Les couleurs" data-en="The colors">Les couleurs</span> <strong><span data-fr="MOI" data-en="ME">MOI</span></strong> / <strong><span data-fr="ALLIÉS" data-en="ALLIES">ALLIÉS</span></strong> <span data-fr="se règlent dans l’onglet" data-en="are set in the">se règlent dans l’onglet</span> <em>Overlay &amp; <span data-fr="Couleurs" data-en="Colors">Couleurs</span></em> <span data-fr="de Kommz." data-en="tab of Kommz.">de Kommz.</span>
             </div>
         </div>
 
-        <h2 id="setup">I. Activation du Module "Stream Connect"</h2>
+        <h2 id="setup"><span data-fr="I. Activation du Module Stream Connect" data-en="I. Activating the Stream Connect Module">I. Activation du Module Stream Connect</span></h2>
         <div class="card">
             <div class="step-container">
                 <div class="step-circle">1</div>
                 <div class="step-content">
-                    <strong>Dans l'interface Kommz (Navigateur) :</strong>
-                    Allez dans l'onglet <em>Modules Système</em> et activez le bouton <code>Stream Connect</code>.
+                    <strong><span data-fr="Dans l'interface Kommz (Navigateur) :" data-en="In the Kommz interface (Browser):">Dans l'interface Kommz (Navigateur) :</span></strong>
+                    <span data-fr="Allez dans l'onglet Modules Système et activez le bouton Stream Connect." data-en="Go to the System Modules tab and enable the Stream Connect button.">Allez dans l'onglet Modules Système et activez le bouton Stream Connect.</span>
                 </div>
             </div>
             <div class="step-container">
                 <div class="step-circle">2</div>
                 <div class="step-content">
-                    <strong>Parlez une fois :</strong>
-                    Dites une phrase au micro. Cela va créer automatiquement un fichier nommé <code>obs_subtitles.txt</code> dans le dossier du logiciel.
+                    <strong><span data-fr="Parlez une fois :" data-en="Speak once:">Parlez une fois :</span></strong>
+                    <span data-fr="Dites une phrase au micro. Cela va créer automatiquement un fichier nommé obs_subtitles.txt dans le dossier du logiciel." data-en="Say a sentence into the microphone. This will automatically create a file named obs_subtitles.txt in the software folder.">Dites une phrase au micro. Cela va créer automatiquement un fichier nommé obs_subtitles.txt dans le dossier du logiciel.</span>
                 </div>
             </div>
         </div>
 
-        <h2 id="obs" style="border-color: var(--obs);">II. Intégration OBS Studio (Overlay Pro)</h2>
-        <p>Suivez ces étapes pour avoir des sous-titres dynamiques qui ne bougent pas.</p>
+        <h2 id="obs" style="border-color: var(--obs);"><span data-fr="II. Intégration OBS Studio (Overlay Pro)" data-en="II. OBS Studio Integration (Pro Overlay)">II. Intégration OBS Studio (Overlay Pro)</span></h2>
+        <p><span data-fr="Suivez ces étapes pour avoir des sous-titres dynamiques qui ne bougent pas." data-en="Follow these steps to get dynamic subtitles that don't shift.">Suivez ces étapes pour avoir des sous-titres dynamiques qui ne bougent pas.</span></p>
 
         <div class="card" style="border-left: 4px solid var(--obs);">
-            <h3>1. Ajouter la Source</h3>
+            <h3><span data-fr="1. Ajouter la Source" data-en="1. Add the Source">1. Ajouter la Source</span></h3>
             <ul style="color:var(--text-muted); padding-left:20px; margin-top:5px;">
-                <li>Dans OBS, panneau <strong>Sources</strong>, cliquez sur <code>+</code>.</li>
-                <li>Choisissez <strong>Texte (GDI+)</strong>.</li>
-                <li>Nommez-la "Sous-titres IA".</li>
+                <li><span data-fr="Dans OBS, panneau Sources, cliquez sur +." data-en="In OBS, Sources panel, click +.">Dans OBS, panneau Sources, cliquez sur +.</span></li>
+                <li><span data-fr="Choisissez Texte (GDI+)." data-en="Choose Text (GDI+).">Choisissez Texte (GDI+).</span></li>
+                <li><span data-fr="Nommez-la Sous-titres IA." data-en="Name it AI Subtitles.">Nommez-la Sous-titres IA.</span></li>
             </ul>
 
-            <h3 style="margin-top:25px;">2. Configuration (Critique)</h3>
+            <h3 style="margin-top:25px;"><span data-fr="2. Configuration (Critique)" data-en="2. Configuration (Critical)">2. Configuration (Critique)</span></h3>
             <div class="alert-obs">
                 <div style="display:flex; align-items:center; gap:15px;">
                     <span style="font-size:1.5em;">⚠️</span>
                     <div>
-                        <strong>RÉGLAGE IMPORTANT :</strong><br>
-                        Cochez la case ☑️ <strong>Lire à partir d'un fichier</strong> (Read from file).<br>
-                        Cliquez sur "Parcourir" et sélectionnez le fichier <code>obs_subtitles.txt</code>.
+                        <strong><span data-fr="RÉGLAGE IMPORTANT :" data-en="IMPORTANT SETTING:">RÉGLAGE IMPORTANT :</span></strong><br>
+                        <span data-fr="Cochez la case ☑️ Lire à partir d'un fichier (Read from file)." data-en="Check the ☑️ Read from file box.">Cochez la case ☑️ Lire à partir d'un fichier (Read from file).</span><br>
+                        <span data-fr="Cliquez sur &quot;Parcourir&quot; et sélectionnez le fichier obs_subtitles.txt." data-en="Click &quot;Browse&quot; and select the obs_subtitles.txt file.">Cliquez sur "Parcourir" et sélectionnez le fichier obs_subtitles.txt.</span>
                     </div>
                 </div>
             </div>
 
-            <h3>3. Le Secret du Centrage Parfait (Anti-Décalage)</h3>
-            <p>Pour éviter que le texte ne se décale quand la phrase change de longueur :</p>
+            <h3><span data-fr="3. Le Secret du Centrage Parfait (Anti-Décalage)" data-en="3. The Perfect Centering Secret (Anti-Shift)">3. Le Secret du Centrage Parfait (Anti-Décalage)</span></h3>
+            <p><span data-fr="Pour éviter que le texte ne se décale quand la phrase change de longueur :" data-en="To prevent the text from shifting when the sentence length changes:">Pour éviter que le texte ne se décale quand la phrase change de longueur :</span></p>
             
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-top:15px;">
                 <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; border:1px solid #333;">
-                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;">Tout en bas des propriétés</span>
-                    <strong style="color:#fff;">☑️ Utiliser des extensions de texte personnalisées</strong>
+                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;"><span data-fr="Tout en bas des propriétés" data-en="At the bottom of properties">Tout en bas des propriétés</span></span>
+                    <strong style="color:#fff;"><span data-fr="☑️ Utiliser des extensions de texte personnalisées" data-en="☑️ Use custom text extents">☑️ Utiliser des extensions de texte personnalisées</span></strong>
                 </div>
                 <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; border:1px solid #333;">
-                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;">Largeur (Width)</span>
-                    <strong style="color:#fff;">1920 (Taille écran)</strong>
+                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;"><span data-fr="Largeur (Width)" data-en="Width">Largeur (Width)</span></span>
+                    <strong style="color:#fff;">1920 (<span data-fr="Taille écran" data-en="Screen size">Taille écran</span>)</strong>
                 </div>
                 <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; border:1px solid #333;">
-                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;">Alignement</span>
-                    <strong style="color:#fff;">Centré (Center)</strong>
+                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;"><span data-fr="Alignement" data-en="Alignment">Alignement</span></span>
+                    <strong style="color:#fff;"><span data-fr="Centré (Center)" data-en="Centered (Center)">Centré (Center)</span></strong>
                 </div>
                 <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; border:1px solid #333;">
-                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;">Retour à la ligne</span>
-                    <strong style="color:#fff;">Word Wrap</strong>
+                    <span style="display:block; font-size:0.7em; text-transform:uppercase; color:#777;"><span data-fr="Retour à la ligne" data-en="Word Wrap">Retour à la ligne</span></span>
+                    <strong style="color:#fff;"><span data-fr="Word Wrap" data-en="Word Wrap">Word Wrap</span></strong>
                 </div>
             </div>
         </div>
 
-        <h2 id="studio" style="border-color: var(--privacy);">III. Nouveautés Studio & Sécurité</h2>
+        <h2 id="studio" style="border-color: var(--privacy);"><span data-fr="III. Nouveautés Studio & Sécurité" data-en="III. Studio & Security Updates">III. Nouveautés Studio & Sécurité</span></h2>
         
         <div class="card" style="border-left: 4px solid var(--privacy);">
             <div style="display:flex; justify-content:space-between;">
-                <h3 style="color:var(--privacy);">🛡️ Privacy Sentinel (TUTO)</h3>
+                <h3 style="color:var(--privacy);"><span data-fr="🛡️ Privacy Sentinel (TUTO)" data-en="🛡️ Privacy Sentinel (TUTORIAL)">🛡️ Privacy Sentinel (TUTO)</span></h3>
             </div>
-            <p>Ce module coupe le son si vous leakez une info privée.</p>
+            <p><span data-fr="Ce module coupe le son si vous leakez une info privée." data-en="This module cuts sound if you leak private info.">Ce module coupe le son si vous leakez une info privée.</span></p>
             
             <div style="background:rgba(244, 63, 94, 0.05); border:1px solid var(--privacy); padding:15px; border-radius:8px; margin-top:15px;">
-                <strong>Comment gérer la liste (Zone Rouge) :</strong>
+                <strong><span data-fr="Comment gérer la liste (Zone Rouge) :" data-en="How to manage the list (Red Zone):">Comment gérer la liste (Zone Rouge) :</span></strong>
                 <ul style="color:#fca5a5; margin-top:10px; padding-left:20px;">
-                    <li><strong>Bouton 👁️ (Cacher/Voir) :</strong> Cliquez dessus pour flouter vos mots secrets si vous montrez l'écran en live.</li>
-                    <li><strong>Ajouter un mot :</strong> Tapez votre adresse ou nom de famille et faites "Ajouter".</li>
-                    <li><strong>Détection Auto :</strong> Les numéros de téléphone (06...) sont bloqués automatiquement sans rien faire.</li>
+                    <li><strong><span data-fr="Bouton 👁️ (Cacher/Voir) :" data-en="Button 👁️ (Hide/Show):">Bouton 👁️ (Cacher/Voir) :</span></strong> <span data-fr="Cliquez dessus pour flouter vos mots secrets si vous montrez l'écran en live." data-en="Click it to blur your secret words if you show the screen live.">Cliquez dessus pour flouter vos mots secrets si vous montrez l'écran en live.</span></li>
+                    <li><strong><span data-fr="Ajouter un mot :" data-en="Add a word:">Ajouter un mot :</span></strong> <span data-fr="Tapez votre adresse ou nom de famille et faites Ajouter." data-en="Type your address or last name and click Add.">Tapez votre adresse ou nom de famille et faites Ajouter.</span></li>
+                    <li><strong><span data-fr="Détection Auto :" data-en="Auto Detection:">Détection Auto :</span></strong> <span data-fr="Les numéros de téléphone (06...) sont bloqués automatiquement sans rien faire." data-en="Phone numbers (06...) are automatically blocked without any action.">Les numéros de téléphone (06...) sont bloqués automatiquement sans rien faire.</span></li>
                 </ul>
             </div>
         </div>
 
         <div class="card" style="border-left: 4px solid var(--obs);">
             <div style="display:flex; justify-content:space-between;">
-                <h3 style="color:#60a5fa;">🌍 Polyglot (2ème Langue)</h3>
+                <h3 style="color:#60a5fa;"><span data-fr="🌍 Polyglot (2ème Langue)" data-en="🌍 Polyglot (2nd Language)">🌍 Polyglot (2ème Langue)</span></h3>
                 <span class="badge b-obs">OBS</span>
             </div>
-            <p>Pour afficher une traduction (ex: Espagnol) en plus du Français.</p>
+            <p><span data-fr="Pour afficher une traduction (ex: Espagnol) en plus du Français." data-en="To display a translation (e.g. Spanish) in addition to French.">Pour afficher une traduction (ex: Espagnol) en plus du Français.</span></p>
             <ul style="margin-top:10px; padding-left:20px; color:var(--text-muted);">
-                <li>Activez le module <strong>Polyglot</strong>.</li>
-                <li>Dans OBS, créez une <strong>DEUXIÈME</strong> source texte.</li>
-                <li>Sélectionnez le fichier : <code>obs_subtitles_ES.txt</code>.</li>
+                <li><span data-fr="Activez le module Polyglot." data-en="Activate the Polyglot module.">Activez le module Polyglot.</span></li>
+                <li><span data-fr="Dans OBS, créez une DEUXIÈME source texte." data-en="In OBS, create a SECOND text source.">Dans OBS, créez une DEUXIÈME source texte.</span></li>
+                <li><span data-fr="Sélectionnez le fichier :" data-en="Select the file:">Sélectionnez le fichier :</span> <code>obs_subtitles_ES.txt</code>.</li>
             </ul>
         </div>
 
         <div class="card" style="border-left: 4px solid #22c55e;">
-            <h3 style="color:#86efac;">Nouveau V4.9 : Pack Expressivite</h3>
-            <p>Vous pouvez maintenant piloter le rendu vocal dans l'onglet IA/Hybrid avec 4 reglages utiles pour le live :</p>
+            <div class="card" style="border-left: 4px solid #22c55e;">
+            <h3 style="color:#86efac;"><span data-fr="Nouveau V5.3 : Migration Audio Canonique" data-en="New in V5.3: Canonical Audio Migration">Nouveau V5.3 : Migration Audio Canonique</span></h3>
+            <p><span data-fr="V5.3 introduit une gestion unifiée des périphériques audio :" data-en="V5.3 introduces unified audio device management:">V5.3 introduit une gestion unifiée des périphériques audio :</span></p>
             <ul style="margin-top:10px; padding-left:20px; color:var(--text-muted);">
-                <li><strong>Sons expressifs</strong> : active ou lisse rire, hesitation, soupir, souffle et interjections.</li>
-                <li><strong>Profil</strong> : Gaming (plus vivant), Pro (plus propre), Roleplay (plus colore).</li>
-                <li><strong>Transcript</strong> : garder les sons dans le texte ou les ignorer pour un overlay plus clean.</li>
-                <li><strong>Rendu TTS</strong> : style pour le timbre, neutre pour une voix plus sobre.</li>
+                <li><span data-fr="Les clés de périphériques sont normalisées sous la forme" data-en="Device keys are normalized in the form">Les clés de périphériques sont normalisées sous la forme</span> <code>hostapi::nom</code>.</li>
+                <li><span data-fr="Un cache runtime" data-en="A">Un cache runtime</span> <code>game_input</code>/<code>game_output</code> <span data-fr="remplace les index bruts" data-en="runtime cache replaces raw">remplace les index bruts</span> <code>int()</code> <span data-fr="indexes." data-en="indexes.">indexes.</span></li>
+                <li><span data-fr="Rétrocompatibilité totale : les anciens profils continuent de fonctionner sans modification." data-en="Full backward compatibility: old profiles keep working without modification.">Rétrocompatibilité totale : les anciens profils continuent de fonctionner sans modification.</span></li>
+            </ul>
+        </div>
+        <h3 style="color:#86efac;"><span data-fr="Nouveau V4.9 : Pack Expressivite" data-en="New in V4.9: Expressiveness Pack">Nouveau V4.9 : Pack Expressivite</span></h3>
+            <p><span data-fr="Vous pouvez maintenant piloter le rendu vocal dans l'onglet IA/Hybrid avec 4 reglages utiles pour le live :" data-en="You can now control the voice rendering in the AI/Hybrid tab with 4 settings useful for live streaming:">Vous pouvez maintenant piloter le rendu vocal dans l'onglet IA/Hybrid avec 4 reglages utiles pour le live :</span></p>
+            <ul style="margin-top:10px; padding-left:20px; color:var(--text-muted);">
+                <li><strong><span data-fr="Sons expressifs" data-en="Expressive Sounds">Sons expressifs</span></strong> : <span data-fr="active ou lisse rire, hesitation, soupir, souffle et interjections." data-en="enables or smooths laughter, hesitation, sighs, breath and interjections.">active ou lisse rire, hesitation, soupir, souffle et interjections.</span></li>
+                <li><strong><span data-fr="Profil" data-en="Profile">Profil</span></strong> : <span data-fr="Gaming (plus vivant), Pro (plus propre), Roleplay (plus colore)." data-en="Gaming (more lively), Pro (cleaner), Roleplay (more colorful).">Gaming (plus vivant), Pro (plus propre), Roleplay (plus colore).</span></li>
+                <li><strong>Transcript</strong> : <span data-fr="garder les sons dans le texte ou les ignorer pour un overlay plus clean." data-en="keep the sounds in the text or ignore them for a cleaner overlay.">garder les sons dans le texte ou les ignorer pour un overlay plus clean.</span></li>
+                <li><strong><span data-fr="Rendu TTS" data-en="TTS Rendering">Rendu TTS</span></strong> : <span data-fr="style pour le timbre, neutre pour une voix plus sobre." data-en="stylized for tone, neutral for a more sober voice.">style pour le timbre, neutre pour une voix plus sobre.</span></li>
             </ul>
         </div>
 
-        <h2 id="classic" style="border-color: var(--stealth);">IV. Modules Essentiels pour Streamer</h2>
+        <h2 id="classic" style="border-color: var(--stealth);"><span data-fr="IV. Modules Essentiels pour Streamer" data-en="IV. Essential Modules for Streamers">IV. Modules Essentiels pour Streamer</span></h2>
         <div class="module-grid">
             <div class="module-card" style="border-top: 3px solid var(--stealth);">
                 <h3>🥷 Stealth Mode</h3>
-                <p>Cache la fenêtre noire (CMD) de la barre des tâches. Indispensable pour ne pas leaker votre IP en Alt-Tab.</p>
+                <p><span data-fr="Cache la fenêtre noire (CMD) de la barre des tâches. Indispensable pour ne pas leaker votre IP en Alt-Tab." data-en="Hides the black window (CMD) from the taskbar. Essential to avoid leaking your IP when Alt-Tabbing.">Cache la fenêtre noire (CMD) de la barre des tâches. Indispensable pour ne pas leaker votre IP en Alt-Tab.</span></p>
             </div>
             <div class="module-card" style="border-top: 3px solid #f472b6;">
                 <h3>🛡️ Tilt Shield</h3>
-                <p>Remplace les insultes par des mots gentils. Idéal pour éviter les bannissements Twitch dus aux textes toxiques à l'écran.</p>
+                <p><span data-fr="Remplace les insultes par des mots gentils. Idéal pour éviter les bannissements Twitch dus aux textes toxiques à l'écran." data-en="Replaces insults with kind words. Ideal for avoiding Twitch bans from toxic text on screen.">Remplace les insultes par des mots gentils. Idéal pour éviter les bannissements Twitch dus aux textes toxiques à l'écran.</span></p>
             </div>
             <div class="module-card" style="border-top: 3px solid #fff;">
                 <h3>🎙️ Tactical Macros</h3>
-                <p>Commandes vocales :<br>• "Clip ça" -> Lance un replay (Alt+F10)<br>• "Mute Discord" -> Coupe le son (Ctrl+Maj+M)</p>
+                <p><span data-fr="Commandes vocales :" data-en="Voice commands:">Commandes vocales :</span><br>• <span data-fr="&quot;Clip ça&quot; -> Lance un replay (Alt+F10)" data-en="&quot;Clip that&quot; -> Triggers a replay (Alt+F10)">"Clip ça" -> Lance un replay (Alt+F10)</span><br>• <span data-fr="&quot;Mute Discord&quot; -> Coupe le son (Ctrl+Maj+M)" data-en="&quot;Mute Discord&quot; -> Mutes sound (Ctrl+Shift+M)">"Mute Discord" -> Coupe le son (Ctrl+Maj+M)</span></p>
             </div>
             <div class="module-card" style="border-top: 3px solid var(--marker);">
                 <h3>📌 Smart Marker</h3>
-                <p>Dites <strong>"Marqueur"</strong> pour noter un timecode. Un petit "Bip" confirme l'action. Fichier CSV généré à la fin.</p>
+                <p><span data-fr="Dites Marqueur pour noter un timecode. Un petit Bip confirme l'action. Fichier CSV généré à la fin." data-en="Say Marker to log a timecode. A small Beep confirms the action. CSV file generated at the end.">Dites Marqueur pour noter un timecode. Un petit Bip confirme l'action. Fichier CSV généré à la fin.</span></p>
             </div>
         </div>
 
         <footer style="text-align:center; margin-top:60px; color:var(--text-muted); font-size:0.8em; border-top:1px solid var(--border); padding-top:20px;">
-            GÉNÉRÉ PAR KOMMZ CORE • KOMMZ GAMER V4.9
+            <span data-fr="GÉNÉRÉ PAR KOMMZ CORE • KOMMZ GAMER V5.3" data-en="GENERATED BY KOMMZ CORE • KOMMZ GAMER V5.3">GÉNÉRÉ PAR KOMMZ CORE • KOMMZ GAMER V5.3</span>
         </footer>
     </div>
 </body>

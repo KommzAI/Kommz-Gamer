@@ -3,122 +3,282 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kommz Overlay</title>
+  <title>Kommz Overlay V5</title>
   <style>
-    :root{
-      --user-color:#00FFFF;
-      --ally-color:#FFFF00;
-      --sys-color:#FF00FF;
+    :root {
+      --user-color: #00FFFF;
+      --ally-color: #FFFF00;
+      --sys-color:  #FF00FF;
+      --shadow: 2px 2px 0 #000, 0 0 12px rgba(0,0,0,0.6);
     }
-    body{
-      margin:0;
-      overflow:hidden;
-      background:transparent;
-      display:flex;
-      flex-direction:column;
-      justify-content:flex-end;
-      align-items:center;
-      height:100vh;
-      font-family:'Segoe UI', Arial, sans-serif;
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      overflow: hidden;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Segoe UI', Arial, sans-serif;
     }
-    #subtitle-container{
-      margin-bottom:20px;
-      text-align:center;
-      transition:opacity 0.5s;
-      width:100%;
-      display:flex;
-      justify-content:center;
-      padding:0 16px;
-      box-sizing:border-box;
+
+    #subtitle-container {
+      margin-bottom: 22px;
+      text-align: center;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 0 20px;
     }
-    .sub-line{
-      display:inline-block;
-      background-color:rgba(0,0,0,0.70);
-      color:var(--user-color);
-      padding:8px 16px;
-      border-radius:10px;
-      font-size:32px;
-      font-weight:700;
-      text-shadow:2px 2px 0 #000;
-      box-shadow:0 4px 10px rgba(0,0,0,0.35);
-      max-width:min(92vw, 1400px);
-      line-height:1.35;
-      white-space:pre-wrap;
-      animation:popIn 0.26s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    .sub-line {
+      display: inline-block;
+      background: rgba(0, 0, 0, 0.72);
+      color: var(--user-color);
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 32px;
+      font-weight: 700;
+      text-shadow: var(--shadow);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+      max-width: min(94vw, 1400px);
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+      animation: popIn 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
     }
-    .sub-line.ally{ color:var(--ally-color); }
-    .sub-line.sys{ color:var(--sys-color); }
-    @keyframes popIn{
-      from{ transform:scale(0.88); opacity:0; }
-      to{ transform:scale(1); opacity:1; }
+
+    .sub-line.ally { color: var(--ally-color); }
+    .sub-line.sys  { color: var(--sys-color);  }
+
+    @keyframes popIn {
+      from { transform: scale(0.85) translateY(8px); opacity: 0; }
+      to   { transform: scale(1)    translateY(0);   opacity: 1; }
     }
+
+    /* Indicateur de connexion SSE (discret, coin haut-gauche) */
+    #sse-status {
+      position: fixed;
+      top: 8px;
+      left: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 7px;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.5);
+      color: #888;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      transition: opacity 0.4s;
+      opacity: 0;  /* caché par défaut, visible seulement en debug */
+    }
+    #sse-status.show { opacity: 1; }
+    #sse-status.ok   { color: #4ade80; }
+    #sse-status.err  { color: #f87171; }
+    #sse-status.poll { color: #facc15; }
   </style>
 </head>
 <body>
+  <div id="sse-status">SSE</div>
   <div id="subtitle-container"></div>
-  <script>
-    const box = document.getElementById('subtitle-container');
-    let lastKey = "";
-    let clearTimer = null;
 
-    function escHtml(s){
-      return String(s).replace(/[&<>"']/g, (c) => ({
+  <script>
+    // ─── Config ──────────────────────────────────────────────────────────────
+    const CLEAR_AFTER_MS  = 6500;   // délai avant effacement du sous-titre
+    const POLL_INTERVAL   = 500;    // fallback polling (ms)
+    const COLOR_INTERVAL  = 2000;   // sync couleurs (ms)
+    const DEBUG_SSE       = false;  // mettre true pour voir l'indicateur SSE
+
+    // ─── State ───────────────────────────────────────────────────────────────
+    const box      = document.getElementById('subtitle-container');
+    const sseEl    = document.getElementById('sse-status');
+    let lastKey    = '';
+    let clearTimer = null;
+    let sseMode    = false;   // true = SSE actif, false = polling fallback
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+    function escHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
       }[c]));
     }
 
-    async function refreshColors(){
-      try{
-        const r = await fetch('/status', { cache: 'no-store' });
-        const d = await r.json();
-        if (d && d.user_overlay_color) document.documentElement.style.setProperty('--user-color', d.user_overlay_color);
-        if (d && d.ally_overlay_color) document.documentElement.style.setProperty('--ally-color', d.ally_overlay_color);
-      }catch(e){}
+    function setSseStatus(state, text) {
+      if (!DEBUG_SSE) return;
+      sseEl.className = 'show ' + state;
+      sseEl.textContent = text;
     }
 
-    function extractLastCue(vttText){
+    function showCue(role, text) {
+      if (!text) return;
+      const cls = role.includes('ALLY') ? 'ally' : (role.includes('SYS') ? 'sys' : 'user');
+      const key = cls + '|' + text;
+      if (key === lastKey) return;
+
+      lastKey = key;
+      box.innerHTML = `<div class="sub-line ${cls}">${escHtml(text)}</div>`;
+
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => {
+        box.innerHTML = '';
+        lastKey = '';
+      }, CLEAR_AFTER_MS);
+    }
+
+    // ─── Couleurs dynamiques ─────────────────────────────────────────────────
+    async function refreshColors() {
+      try {
+        const r = await fetch('/status', { cache: 'no-store' });
+        const d = await r.json();
+        if (d?.user_overlay_color)
+          document.documentElement.style.setProperty('--user-color', d.user_overlay_color);
+        if (d?.ally_overlay_color)
+          document.documentElement.style.setProperty('--ally-color', d.ally_overlay_color);
+      } catch (_) {}
+    }
+
+    // ─── SSE (mode principal) ─────────────────────────────────────────────────
+    /**
+     * Le backend doit exposer la route SSE suivante (à ajouter dans vtp_core.py) :
+     *
+     *   @app.route("/subs/stream")
+     *   def subs_sse_stream():
+     *       import queue, json
+     *       def generate():
+     *           last_key = ""
+     *           while True:
+     *               try:
+     *                   time.sleep(0.35)
+     *                   recent = [x for x in subs_buffer
+     *                             if (time.time() - float(x.get("timestamp", 0) or 0)) < 10.0]
+     *                   if not recent:
+     *                       yield "data: {}\n\n"
+     *                       continue
+     *                   last = recent[-1]
+     *                   lang = str(last.get("lang", "") or "")
+     *                   is_ally = "ALLIÉ" in lang or "ALLY" in lang
+     *                   role = "SYS" if "SYS" in lang else ("ALLY" if is_ally else "USER")
+     *                   txt = str(last.get("text", "") or "").strip()
+     *                   key = f"{role}|{txt}"
+     *                   if key != last_key and txt:
+     *                       last_key = key
+     *                       yield f"data: {json.dumps({'role': role, 'text': txt, 'user_color': AUDIO_CONFIG.get('user_overlay_color','#00FFFF'), 'ally_color': AUDIO_CONFIG.get('ally_overlay_color','#FFFF00')})}\n\n"
+     *                   else:
+     *                       yield ": keep-alive\n\n"
+     *               except GeneratorExit:
+     *                   break
+     *               except Exception:
+     *                   yield ": error\n\n"
+     *       resp = Response(generate(), mimetype="text/event-stream")
+     *       resp.headers["Cache-Control"] = "no-cache"
+     *       resp.headers["X-Accel-Buffering"] = "no"
+     *       return resp
+     */
+
+    let sseSource = null;
+    let sseReconnectTimer = null;
+
+    function startSSE() {
+      if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+      }
+
+      setSseStatus('ok', 'SSE ⬆');
+      sseSource = new EventSource('/subs/stream');
+
+      sseSource.onopen = () => {
+        sseMode = true;
+        setSseStatus('ok', 'SSE ✓');
+        // Arrêter le polling de fallback si actif
+        stopPolling();
+      };
+
+      sseSource.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (!d || !d.text) return;
+          // Sync couleurs depuis l'event si disponible
+          if (d.user_color)
+            document.documentElement.style.setProperty('--user-color', d.user_color);
+          if (d.ally_color)
+            document.documentElement.style.setProperty('--ally-color', d.ally_color);
+          showCue(d.role || 'USER', d.text);
+        } catch (_) {}
+      };
+
+      sseSource.onerror = () => {
+        sseMode = false;
+        setSseStatus('err', 'SSE ✗ → poll');
+        sseSource.close();
+        sseSource = null;
+        // Activer le polling de secours
+        startPolling();
+        // Tenter de reconnecter SSE dans 8s
+        if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = setTimeout(startSSE, 8000);
+      };
+    }
+
+    // ─── Polling fallback (si /subs/stream n'existe pas encore) ──────────────
+    let pollTimer = null;
+
+    function extractLastCue(vttText) {
       const lines = (vttText || '').split('\n');
-      for (let i = lines.length - 1; i >= 0; i--){
+      for (let i = lines.length - 1; i >= 0; i--) {
         const line = (lines[i] || '').trim();
         if (!line) continue;
         if (line.includes('-->')) continue;
         if (line.toUpperCase().startsWith('WEBVTT')) continue;
         if (/^\d+$/.test(line)) continue;
-
-        // Exemple: <v USER>texte</v>
         const m = line.match(/<v\s+([^>]+)>/i);
         const role = (m ? m[1] : 'USER').trim().toUpperCase();
         const text = line.replace(/<[^>]*>/g, '').trim();
         return { role, text };
       }
-      return { role:'', text:'' };
+      return { role: '', text: '' };
     }
 
-    async function updateSubs(){
-      try{
+    async function pollOnce() {
+      try {
         const res = await fetch('/subs/live.vtt', { cache: 'no-store' });
         const vtt = await res.text();
         const cue = extractLastCue(vtt);
-        if (!cue.text) return;
-
-        const cls = cue.role.includes('ALLY') ? 'ally' : (cue.role.includes('SYS') ? 'sys' : 'user');
-        const key = cls + '|' + cue.text;
-        if (key !== lastKey){
-          lastKey = key;
-          box.innerHTML = `<div class="sub-line ${cls}">${escHtml(cue.text)}</div>`;
-          if (clearTimer) clearTimeout(clearTimer);
-          clearTimer = setTimeout(() => {
-            box.innerHTML = '';
-            lastKey = '';
-          }, 6500);
-        }
-      }catch(e){}
+        if (cue.text) showCue(cue.role, cue.text);
+      } catch (_) {}
     }
 
+    function startPolling() {
+      if (pollTimer) return; // déjà actif
+      setSseStatus('poll', '📡 poll');
+      pollTimer = setInterval(pollOnce, POLL_INTERVAL);
+      pollOnce();
+    }
+
+    function stopPolling() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    // ─── Boot ─────────────────────────────────────────────────────────────────
     refreshColors();
-    setInterval(refreshColors, 2000);
-    setInterval(updateSubs, 500);
+    setInterval(refreshColors, COLOR_INTERVAL);
+
+    // Tenter SSE en premier, le polling se lance automatiquement en fallback
+    startSSE();
+
+    // Si SSE ne s'est pas ouvert en 3s, forcer le fallback polling
+    setTimeout(() => {
+      if (!sseMode) {
+        setSseStatus('poll', '📡 poll (no SSE)');
+        startPolling();
+      }
+    }, 3000);
   </script>
 </body>
 </html>
-

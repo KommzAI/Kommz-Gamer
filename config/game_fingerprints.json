@@ -1,0 +1,24 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "Base de fingerprints audio par jeu - V5.3 Game Detection V2",
+    "sample_rate": 16000,
+    "capture_duration_s": 2.5,
+    "match_threshold": 0.72,
+    "bands": 8,
+    "updated": "2026-05-20"
+  },
+  "cs2": [],
+  "valorant": [],
+  "warzone": [],
+  "fortnite": [],
+  "apex": [],
+  "overwatch": [],
+  "r6": [],
+  "tarkov": [],
+  "rust": [],
+  "pubg": [],
+  "lol": [],
+  "dota2": [],
+  "discord_party": []
+}

@@ -1,4 +1,4 @@
-# Roadmap (Community)
+# Roadmap
 
 La roadmap est suivie dans GitHub Issues.
 

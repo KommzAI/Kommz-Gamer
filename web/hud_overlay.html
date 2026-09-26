@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kommz HUD</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: transparent !important;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, monospace, sans-serif;
+    }
+
+    /* ══ DESIGN IDENTIQUE AU HUD INTERNE ══ */
+    #runtimeHUD {
+      position: fixed;
+      top: 16px; left: 16px;
+      z-index: 9999;
+      background: rgba(11,15,20,0.82);
+      border: 1px solid rgba(47,129,247,0.35);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-family: 'Segoe UI', monospace, sans-serif;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #e6edf3;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.55);
+      user-select: none;
+      cursor: grab;
+      min-width: 165px;
+      transition: opacity 0.25s ease, border-color 0.25s;
+    }
+    #runtimeHUD:active { cursor: grabbing; }
+
+    .hud-title {
+      font-size: 10px; font-weight: 800; color: #2f81f7;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 6px;
+      border-bottom: 1px solid rgba(47,129,247,0.2);
+      padding-bottom: 4px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .hud-title-left {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .hud-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #4ade80; box-shadow: 0 0 5px #4ade80;
+      flex-shrink: 0;
+      animation: blink 2s infinite;
+    }
+    .hud-dot.warn  { background: #fbbf24; box-shadow: 0 0 5px #fbbf24; }
+    .hud-dot.err   { background: #f87171; box-shadow: 0 0 5px #f87171; animation: blink 0.6s infinite; }
+    .hud-dot.off   { background: #8b949e; box-shadow: none; animation: none; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+    .hud-gear {
+      cursor: pointer; color: #8b949e; font-size: 12px;
+      line-height: 1; padding: 0 2px; border-radius: 3px;
+      transition: color 0.15s;
+    }
+    .hud-gear:hover { color: #e6edf3; }
+
+    .hud-row {
+      display: flex; justify-content: space-between;
+      align-items: center; gap: 12px;
+    }
+    .hud-key {
+      color: #8b949e; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .hud-val {
+      color: #a855f7; font-weight: 700; font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .hud-val.ok   { color: #4ade80; }
+    .hud-val.warn { color: #fbbf24; }
+    .hud-val.err  { color: #f87171; }
+    .hud-val.blue { color: #60a5fa; }
+
+    /* ══ PANNEAU RÉGLAGES ══ */
+    #settings {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11,15,20,0.97);
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 14px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 11px;
+      color: #8b949e;
+      overflow-y: auto;
+    }
+    #settings.open { display: flex; }
+
+    .cfg-title {
+      font-size: 10px; font-weight: 800; color: #2f81f7;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      border-bottom: 1px solid rgba(47,129,247,0.2);
+      padding-bottom: 6px; margin-bottom: 2px;
+    }
+    .cfg-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .cfg-row label {
+      display: flex; align-items: center; gap: 6px;
+      cursor: pointer; font-size: 11px; color: #8b949e;
+      white-space: nowrap;
+    }
+    .cfg-row input[type=range] {
+      flex: 1; accent-color: #2f81f7; height: 3px;
+    }
+    .cfg-row input[type=checkbox] {
+      accent-color: #2f81f7; transform: scale(1.1); cursor: pointer;
+    }
+    .cfg-row input[type=color] {
+      width: 26px; height: 20px; border: none;
+      background: none; cursor: pointer; padding: 0; border-radius: 3px;
+    }
+    .cfg-val {
+      font-size: 10px; color: #2f81f7; font-weight: 700;
+      min-width: 32px; text-align: right;
+    }
+    .cfg-section {
+      font-size: 9px; font-weight: 800; color: #30363d;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-top: 2px;
+    }
+    .cfg-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+    }
+    .cfg-btn {
+      background: #161b22; border: 1px solid #30363d;
+      color: #8b949e; font-size: 9px; padding: 5px 4px;
+      border-radius: 5px; cursor: pointer; text-align: center;
+      transition: border-color 0.15s, color 0.15s;
+      font-family: inherit;
+    }
+    .cfg-btn:hover { border-color: #2f81f7; color: #2f81f7; }
+    .cfg-close {
+      margin-top: auto;
+      background: #161b22; border: 1px solid #30363d;
+      color: #8b949e; font-size: 11px; padding: 7px;
+      border-radius: 6px; cursor: pointer; text-align: center;
+      font-family: inherit;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .cfg-close:hover { border-color: #f87171; color: #f87171; }
+
+    #connStatus {
+      font-size: 9px; color: #30363d;
+      position: fixed; bottom: 4px; right: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══ HUD principal ══ -->
+<div id="runtimeHUD">
+  <div class="hud-title">
+    <div class="hud-title-left">
+      <span class="hud-dot off" id="connDot"></span>
+      <span>⚡ KOMMZ HUD</span>
+    </div>
+    <span class="hud-gear" title="Réglages" onclick="openSettings()">⚙</span>
+  </div>
+  <div class="hud-row" id="rowPreset">
+    <span class="hud-key">Preset</span>
+    <span class="hud-val" id="vPreset">—</span>
+  </div>
+  <div class="hud-row" id="rowRMS">
+    <span class="hud-key">RMS</span>
+    <span class="hud-val" id="vRMS">—</span>
+  </div>
+  <div class="hud-row" id="rowSNR">
+    <span class="hud-key">SNR</span>
+    <span class="hud-val" id="vSNR">—</span>
+  </div>
+  <div class="hud-row" id="rowFocus">
+    <span class="hud-key">Focus</span>
+    <span class="hud-val blue" id="vFocus">—</span>
+  </div>
+  <div class="hud-row" id="rowUptime">
+    <span class="hud-key">Uptime</span>
+    <span class="hud-val ok" id="vUptime">—</span>
+  </div>
+  <div class="hud-row" id="rowMic">
+    <span class="hud-key">Micro</span>
+    <span class="hud-val" id="vMic">—</span>
+  </div>
+  <div class="hud-row" id="rowListen">
+    <span class="hud-key">Écoute</span>
+    <span class="hud-val" id="vListen">—</span>
+  </div>
+  <div class="hud-row" id="rowGame" style="display:none;">
+    <span class="hud-key">Jeu</span>
+    <span class="hud-val" id="vGame">—</span>
+  </div>
+</div>
+
+<!-- ══ Panneau réglages ══ -->
+<div id="settings">
+  <div class="cfg-title">⚙ Réglages HUD</div>
+
+  <div class="cfg-section">Apparence</div>
+
+  <div class="cfg-row">
+    <label>Opacité fond</label>
+    <input type="range" id="sBg" min="5" max="98" value="82" step="3"
+      oninput="setBgOpacity(this.value)">
+    <span class="cfg-val" id="sBgLbl">82%</span>
+  </div>
+
+  <div class="cfg-row">
+    <label>Taille texte</label>
+    <input type="range" id="sFontSize" min="10" max="20" value="12" step="1"
+      oninput="setFontSize(this.value)">
+    <span class="cfg-val" id="sFontLbl">12px</span>
+  </div>
+
+  <div class="cfg-row">
+    <label>Couleur bordure</label>
+    <input type="color" id="sBorderColor" value="#2f81f7"
+      oninput="setBorderColor(this.value)">
+    <input type="color" id="sAccentColor" value="#a855f7"
+      oninput="setAccentColor(this.value)" title="Couleur valeurs">
+    <span style="font-size:9px; color:#30363d;">bord · val</span>
+  </div>
+
+  <div class="cfg-section">Position rapide</div>
+  <div class="cfg-grid">
+    <button class="cfg-btn" onclick="setPos('top-left')">↖ H.Gauche</button>
+    <button class="cfg-btn" onclick="setPos('top-center')">⬆ H.Centre</button>
+    <button class="cfg-btn" onclick="setPos('top-right')">↗ H.Droite</button>
+    <button class="cfg-btn" onclick="setPos('mid-left')">◀ M.Gauche</button>
+    <button class="cfg-btn" onclick="setPos('center')">⊙ Centre</button>
+    <button class="cfg-btn" onclick="setPos('mid-right')">▶ M.Droite</button>
+    <button class="cfg-btn" onclick="setPos('bot-left')">↙ B.Gauche</button>
+    <button class="cfg-btn" onclick="setPos('bot-center')">⬇ B.Centre</button>
+    <button class="cfg-btn" onclick="setPos('bot-right')">↘ B.Droite</button>
+  </div>
+
+  <div class="cfg-section">Lignes affichées</div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <label><input type="checkbox" id="chkPreset" checked onchange="toggleRow('rowPreset',this.checked)"> Preset</label>
+    <label><input type="checkbox" id="chkRMS"    checked onchange="toggleRow('rowRMS',this.checked)">    RMS</label>
+    <label><input type="checkbox" id="chkSNR"    checked onchange="toggleRow('rowSNR',this.checked)">    SNR</label>
+    <label><input type="checkbox" id="chkFocus"  checked onchange="toggleRow('rowFocus',this.checked)">  Focus</label>
+    <label><input type="checkbox" id="chkUptime" checked onchange="toggleRow('rowUptime',this.checked)"> Uptime</label>
+    <label><input type="checkbox" id="chkMic"    checked onchange="toggleRow('rowMic',this.checked)">    Micro</label>
+    <label><input type="checkbox" id="chkListen" checked onchange="toggleRow('rowListen',this.checked)"> Écoute</label>
+    <label><input type="checkbox" id="chkGame"         onchange="toggleRow('rowGame',this.checked)">    Jeu</label>
+  </div>
+
+  <button class="cfg-close" onclick="closeSettings()">✕ Fermer</button>
+</div>
+
+<span id="connStatus">connecting…</span>
+
+<script>
+const CORE = 'http://127.0.0.1:8770';
+const S = (k, v) => { try { localStorage.setItem('khud2_' + k, String(v)); } catch(_){} };
+const L = (k, fb) => { try { return localStorage.getItem('khud2_' + k) ?? fb; } catch(_){ return fb; } };
+
+const hud = document.getElementById('runtimeHUD');
+const connDot = document.getElementById('connDot');
+const connStatus = document.getElementById('connStatus');
+
+// ── Drag ──────────────────────────────────────────────────
+let _dx=0, _dy=0, _drag=false;
+hud.addEventListener('mousedown', e => {
+  if (e.target.classList.contains('hud-gear')) return;
+  _drag=true;
+  _dx=e.clientX - hud.getBoundingClientRect().left;
+  _dy=e.clientY - hud.getBoundingClientRect().top;
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (!_drag) return;
+  const x = Math.max(0, Math.min(window.innerWidth  - hud.offsetWidth,  e.clientX - _dx));
+  const y = Math.max(0, Math.min(window.innerHeight - hud.offsetHeight, e.clientY - _dy));
+  hud.style.left=x+'px'; hud.style.top=y+'px';
+  hud.style.right='auto'; hud.style.bottom='auto';
+  S('x', x); S('y', y); S('anchor','custom');
+});
+document.addEventListener('mouseup', () => { _drag=false; });
+
+// ── Settings ──────────────────────────────────────────────
+function openSettings()  { document.getElementById('settings').classList.add('open'); }
+function closeSettings() { document.getElementById('settings').classList.remove('open'); }
+hud.addEventListener('dblclick', openSettings);
+
+function setBgOpacity(v) {
+  const pct = Number(v)/100;
+  hud.style.background = `rgba(11,15,20,${pct})`;
+  document.getElementById('sBgLbl').textContent = v + '%';
+  S('bgOp', v);
+}
+
+function setFontSize(v) {
+  hud.querySelectorAll('.hud-val').forEach(el => el.style.fontSize = v + 'px');
+  hud.querySelectorAll('.hud-key').forEach(el => el.style.fontSize = (Number(v)-1) + 'px');
+  document.getElementById('sFontLbl').textContent = v + 'px';
+  S('fontSize', v);
+}
+
+function setBorderColor(v) {
+  hud.style.borderColor = v.replace('ff','') + '59'; // transparent version
+  hud.style.setProperty('--hud-border', v);
+  document.getElementById('connDot').style.boxShadow = `0 0 5px ${v}`;
+  S('borderColor', v);
+}
+
+let _accentColor = '#a855f7';
+function setAccentColor(v) {
+  _accentColor = v;
+  hud.querySelectorAll('.hud-val:not(.ok):not(.warn):not(.err):not(.blue)').forEach(el => el.style.color = v);
+  S('accentColor', v);
+}
+
+function setPos(pos) {
+  hud.style.transform = '';
+  hud.style.left = hud.style.top = hud.style.right = hud.style.bottom = 'auto';
+  const pad = '16px';
+  const positions = {
+    'top-left':   { top:pad,    left:pad,    right:'auto', bottom:'auto' },
+    'top-center': { top:pad,    left:'50%',  right:'auto', bottom:'auto', transform:'translateX(-50%)' },
+    'top-right':  { top:pad,    right:pad,   left:'auto',  bottom:'auto' },
+    'mid-left':   { top:'50%',  left:pad,    right:'auto', bottom:'auto', transform:'translateY(-50%)' },
+    'center':     { top:'50%',  left:'50%',  right:'auto', bottom:'auto', transform:'translate(-50%,-50%)' },
+    'mid-right':  { top:'50%',  right:pad,   left:'auto',  bottom:'auto', transform:'translateY(-50%)' },
+    'bot-left':   { bottom:pad, left:pad,    right:'auto', top:'auto' },
+    'bot-center': { bottom:pad, left:'50%',  right:'auto', top:'auto',    transform:'translateX(-50%)' },
+    'bot-right':  { bottom:pad, right:pad,   left:'auto',  top:'auto' },
+  };
+  const p = positions[pos]; if (!p) return;
+  Object.entries(p).forEach(([k,v]) => hud.style[k] = v||'');
+  S('anchor', pos); S('x',''); S('y','');
+}
+
+function toggleRow(id, show) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = show ? 'flex' : 'none';
+  S('row_'+id, show?'1':'0');
+}
+
+// ── Restore state ─────────────────────────────────────────
+function restore() {
+  // Position
+  const anchor = L('anchor','top-left');
+  const x = L('x',''); const y = L('y','');
+  if (anchor === 'custom' && x && y) {
+    hud.style.left=x+'px'; hud.style.top=y+'px';
+    hud.style.right='auto'; hud.style.bottom='auto';
+  } else {
+    setPos(anchor);
+  }
+
+  // Opacité
+  const bg = L('bgOp','82');
+  document.getElementById('sBg').value = bg;
+  setBgOpacity(bg);
+
+  // Taille texte
+  const fs = L('fontSize','12');
+  document.getElementById('sFontSize').value = fs;
+  setFontSize(fs);
+
+  // Couleurs
+  const bc = L('borderColor','#2f81f7');
+  document.getElementById('sBorderColor').value = bc;
+  setBorderColor(bc);
+
+  const ac = L('accentColor','#a855f7');
+  document.getElementById('sAccentColor').value = ac;
+  setAccentColor(ac);
+
+  // Lignes
+  const rows = ['rowPreset','rowRMS','rowSNR','rowFocus','rowUptime','rowMic','rowListen','rowGame'];
+  const defaults = {'rowGame':'0'};
+  rows.forEach(id => {
+    const show = L('row_'+id, defaults[id]||'1') === '1';
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? 'flex' : 'none';
+    const cbId = 'chk' + id.charAt(3).toUpperCase() + id.slice(4);
+    const cb = document.getElementById(cbId.charAt(0).toLowerCase() + cbId.slice(1));
+    if (cb) cb.checked = show;
+  });
+}
+
+// ── Poll /status ──────────────────────────────────────────
+async function poll() {
+  try {
+    const r = await fetch(CORE + '/status', { cache:'no-store' });
+    const d = await r.json();
+    const rt = d.listen_runtime || d.pipeline_runtime || {};
+
+    connDot.className = 'hud-dot';
+    connStatus.textContent = '';
+
+    // Preset
+    const preset = d.ally_game_preset || d.quality_preset || '—';
+    document.getElementById('vPreset').textContent = preset;
+
+    // RMS
+    const rmsN = rt.noise_rms !== undefined ? Number(rt.noise_rms)
+               : (d.rms !== undefined ? Number(d.rms) : null);
+    const elR = document.getElementById('vRMS');
+    elR.textContent = rmsN !== null ? rmsN.toFixed(4) : '—';
+    elR.className = 'hud-val' + (rmsN === null ? '' : rmsN > 0.1 ? ' warn' : rmsN > 0 ? '' : '');
+
+    // SNR
+    const snrN = rt.snr_db !== undefined ? Number(rt.snr_db) : null;
+    const elS = document.getElementById('vSNR');
+    elS.textContent = snrN !== null ? snrN.toFixed(1) + ' dB' : '—';
+    elS.className = 'hud-val' + (snrN === null ? '' : snrN > 20 ? ' ok' : snrN > 10 ? ' blue' : ' warn');
+
+    // Focus
+    const focus = d.ally_voice_focus_effective || d.ally_voice_focus_mode || '—';
+    const elF = document.getElementById('vFocus');
+    elF.textContent = focus;
+    elF.className = 'hud-val' + (focus==='v3' ? ' ok' : focus==='aggressive' ? ' warn' : ' blue');
+
+    // Uptime
+    const upSec = Number(d.uptime_seconds || 0);
+    const h = Math.floor(upSec/3600), m = Math.floor((upSec%3600)/60);
+    document.getElementById('vUptime').textContent = upSec > 0 ? (h>0 ? h+'h '+m+'min' : m+'min') : '—';
+
+    // Micro
+    const elM = document.getElementById('vMic');
+    if (d.recording) { elM.textContent='🔴 REC'; elM.className='hud-val err'; }
+    else { elM.textContent='✅ Prêt'; elM.className='hud-val ok'; }
+
+    // Écoute
+    const elL = document.getElementById('vListen');
+    if (d.is_listening) { elL.textContent='ACTIF'; elL.className='hud-val ok'; }
+    else { elL.textContent='INACTIF'; elL.className='hud-val warn'; }
+
+    // Jeu
+    document.getElementById('vGame').textContent = d.current_game || d.detected_game || '—';
+
+  } catch(e) {
+    connDot.className = 'hud-dot err';
+    connStatus.textContent = 'hors ligne';
+  }
+}
+
+restore();
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

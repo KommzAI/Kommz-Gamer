@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kommz Voice — Moteur vocal IA</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+:root {
+    --bg-void:#0B0B0F;--bg-panel:#13131a;--bg-surface:#0F0F13;--bg-input:#080810;
+    --border:rgba(255,255,255,0.07);--border-violet:rgba(124,58,237,0.3);
+    --violet:#7c3aed;--violet-light:#a78bfa;--cyan:#22d3ee;--cyan-dark:#0891b2;
+    --green:#10b981;--red:#ef4444;--yellow:#f59e0b;
+    --text:#ffffff;--muted:#6b7280;--muted-light:#9ca3af;
+    --font:'DM Sans',sans-serif;--mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg-void);color:var(--text);font-family:var(--font);height:100vh;overflow:hidden;font-size:.875rem;zoom:1;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:10px;}
+::-webkit-scrollbar-thumb:hover{background:var(--violet);}
+
+/* AUTH */
+.auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg-void);position:relative;overflow:hidden;}
+.glow{position:absolute;border-radius:50%;pointer-events:none;}
+.glow-1{top:15%;left:25%;width:500px;height:500px;background:radial-gradient(circle,rgba(124,58,237,.12) 0%,transparent 70%);}
+.glow-2{bottom:10%;right:15%;width:400px;height:400px;background:radial-gradient(circle,rgba(34,211,238,.07) 0%,transparent 70%);}
+.auth-card{width:440px;padding:40px;background:var(--bg-panel);border:1px solid var(--border);border-radius:28px;box-shadow:0 40px 120px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.03);position:relative;z-index:1;}
+.auth-logo{width:52px;height:52px;background:linear-gradient(135deg,var(--violet),var(--cyan-dark));border-radius:16px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;color:#fff;box-shadow:0 0 30px rgba(124,58,237,.3);}
+.auth-tabs{display:flex;background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:4px;gap:4px;margin-bottom:28px;}
+.auth-tab{flex:1;text-align:center;padding:10px;border-radius:10px;font-weight:700;font-size:.72rem;letter-spacing:.1em;cursor:pointer;color:var(--muted);transition:all .2s;text-transform:uppercase;font-family:var(--font);}
+.auth-tab.active{background:linear-gradient(135deg,var(--violet),#4f46e5);color:#fff;box-shadow:0 4px 15px rgba(124,58,237,.3);}
+.field-label{font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.15em;margin-bottom:8px;display:block;font-family:var(--font);}
+.kommz-input{width:100%;background:var(--bg-input);border:1px solid var(--border);color:var(--text);padding:14px 18px;border-radius:14px;font-family:var(--font);font-size:.9rem;transition:all .2s;outline:none;}
+.kommz-input:focus{border-color:rgba(124,58,237,.5);box-shadow:0 0 0 4px rgba(124,58,237,.1);}
+.btn-violet{width:100%;padding:16px;background:linear-gradient(135deg,var(--violet) 0%,#4f46e5 100%);border:none;border-radius:14px;color:#fff;font-family:var(--font);font-weight:700;font-size:.85rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .2s;box-shadow:0 8px 25px rgba(124,58,237,.35);}
+.btn-violet:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 35px rgba(124,58,237,.5);}
+.btn-violet:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+
+/* DASHBOARD */
+.dashboard{display:flex;height:100vh;}
+.sidebar{width:220px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:22px 14px;flex-shrink:0;overflow-y:auto;}
+.brand{display:flex;align-items:center;gap:12px;padding:0 4px;margin-bottom:32px;}
+.brand-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--violet),var(--cyan-dark));border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem;flex-shrink:0;}
+.brand-name{font-weight:800;font-size:.95rem;letter-spacing:-.02em;color:#fff;}
+.brand-sub{font-size:.58rem;font-weight:600;letter-spacing:.15em;color:var(--violet-light);text-transform:uppercase;margin-top:2px;font-family:var(--font);}
+.nav-label{font-size:.58rem;font-weight:700;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;padding:0 10px;margin-bottom:8px;font-family:var(--font);}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;transition:all .2s;color:var(--muted-light);font-weight:600;font-size:.83rem;border:1px solid transparent;margin-bottom:3px;}
+.nav-item:hover{background:rgba(255,255,255,.03);color:#fff;}
+.nav-item.active{background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.2);color:var(--violet-light);font-weight:700;}
+.nav-badge{margin-left:auto;font-family:var(--font);font-size:.6rem;background:rgba(124,58,237,.15);color:var(--violet-light);border:1px solid rgba(124,58,237,.2);padding:2px 7px;border-radius:100px;}
+.sidebar-footer{margin-top:auto;padding-top:18px;border-top:1px solid var(--border);}
+.user-chip{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;}
+.user-avatar{width:32px;height:32px;background:linear-gradient(135deg,var(--violet),var(--cyan-dark));border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;flex-shrink:0;}
+.user-email{font-size:.72rem;color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.user-status{font-size:.55rem;font-weight:700;color:var(--green);letter-spacing:.08em;text-transform:uppercase;font-family:var(--font);}
+.logout-btn{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;transition:color .2s;}
+.logout-btn:hover{color:var(--red);}
+.logout-action{margin-top:8px;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:rgba(239,68,68,.08);color:#fecaca;text-decoration:none;font-size:.75rem;font-weight:700;cursor:pointer;}
+.logout-action:hover{background:rgba(239,68,68,.16);color:#fee2e2;}
+.trial-card{margin-top:10px;padding:10px 12px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.25);border-radius:12px;}
+.trial-title{font-family:var(--font);font-size:.58rem;color:var(--violet-light);font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
+.trial-main{margin-top:6px;font-size:.72rem;color:#fff;font-weight:700;}
+.trial-sub{margin-top:4px;font-size:.64rem;color:var(--muted-light);}
+
+/* MAIN */
+.main-view{flex:1;overflow:hidden;display:flex;flex-direction:column;background:radial-gradient(ellipse at top right,#0d0d18 0%,var(--bg-void) 60%);}
+.secure-view{height:100%;overflow-y:auto;padding:28px 36px 34px;}
+.secure-wrap{max-width:860px;}
+.secure-title{font-size:1.7rem;font-weight:800;letter-spacing:-.03em;margin-bottom:6px;}
+.secure-sub{font-size:.8rem;color:var(--muted);margin-bottom:20px;}
+.secure-card{background:var(--bg-panel);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;}
+.secure-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;}
+.secure-label{font-size:.65rem;color:var(--muted);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;display:block;}
+.secure-select,.secure-input,.secure-textarea{width:100%;background:var(--bg-input);border:1px solid var(--border);color:#fff;border-radius:10px;padding:10px 12px;font-family:var(--font);}
+.secure-textarea{min-height:140px;resize:vertical;}
+.secure-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+.secure-btn{border:1px solid var(--border);background:var(--bg-input);color:#fff;padding:10px 14px;border-radius:10px;font-weight:700;font-size:.78rem;cursor:pointer;}
+.secure-btn.primary{background:linear-gradient(135deg,var(--violet),#4f46e5);border-color:rgba(124,58,237,.35);}
+.secure-btn.warn{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.35);color:#fde68a;}
+.secure-note{font-size:.72rem;color:var(--muted-light);}
+
+/* ==============================
+   VOICE LAB
+============================== */
+.lab-view{height:100%;display:flex;flex-direction:column;overflow:hidden;}
+.lab-header{padding:28px 36px 24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;flex-shrink:0;}
+.lab-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+.xtts-status{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border-radius:11px;border:1px solid var(--border);background:var(--bg-input);font-size:.68rem;font-weight:700;color:var(--muted-light);}
+.xtts-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);}
+.xtts-status.ready .xtts-dot{background:var(--green);box-shadow:0 0 8px rgba(16,185,129,.6);}
+.xtts-status.cold .xtts-dot{background:var(--yellow);box-shadow:0 0 8px rgba(245,158,11,.6);}
+.xtts-status.offline .xtts-dot{background:var(--red);box-shadow:0 0 8px rgba(239,68,68,.6);}
+.lab-eyebrow{font-family:var(--font);font-size:.6rem;color:var(--cyan);letter-spacing:.18em;text-transform:uppercase;margin-bottom:6px;}
+.lab-title{font-size:1.9rem;font-weight:800;letter-spacing:-.04em;line-height:1;}
+.lab-title span{background:linear-gradient(135deg,var(--violet-light),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.lab-sub{font-size:.75rem;color:var(--muted);margin-top:5px;font-weight:500;}
+.btn-new{display:flex;align-items:center;gap:8px;padding:11px 20px;background:linear-gradient(135deg,var(--violet),#4f46e5);border:none;border-radius:12px;color:#fff;font-family:var(--font);font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:all .25s;box-shadow:0 6px 20px rgba(124,58,237,.3);}
+.btn-new:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(124,58,237,.5);}
+.voice-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;padding:24px 36px;overflow-y:auto;flex:1;align-items:start;align-content:start;}
+
+/* VOICE CARD */
+.voice-card{background:var(--bg-panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:all .25s;position:relative;overflow:hidden;height:fit-content;}
+.voice-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--violet),var(--cyan));opacity:0;transition:opacity .25s;}
+.voice-card:hover{border-color:rgba(124,58,237,.25);background:#161622;box-shadow:0 8px 25px rgba(0,0,0,.4);}
+.voice-card:hover::before{opacity:1;}
+.vc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.vc-avatar{width:36px;height:36px;background:linear-gradient(135deg,var(--violet),#4f46e5);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1rem;color:#fff;}
+.vc-preview{width:28px;height:28px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted-light);font-size:.8rem;transition:all .2s;}
+.vc-preview:hover{background:rgba(124,58,237,.15);border-color:rgba(124,58,237,.3);color:var(--violet-light);}
+.vc-name{font-weight:600;font-size:.85rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vc-id{font-family:var(--font);font-size:.58rem;color:var(--muted);margin-top:2px;}
+.vc-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}
+.vc-tag{font-family:var(--font);font-size:.58rem;padding:3px 8px;border-radius:6px;}
+.vc-tag-lang{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.15);}
+.vc-tag-attr{background:rgba(255,255,255,.04);color:var(--muted);border:1px solid var(--border);}
+.empty-state{grid-column:1/-1;text-align:center;padding:60px 20px;}
+.empty-icon{width:60px;height:60px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.15);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;color:var(--violet-light);font-size:1.6rem;}
+.empty-title{font-size:1rem;font-weight:700;color:var(--muted);margin-bottom:6px;}
+.empty-sub{font-size:.78rem;color:var(--muted);opacity:.7;}
+
+/* CONTEXT MENU */
+.ctx-menu{position:fixed;z-index:99999;background:var(--bg-panel);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:6px;min-width:200px;box-shadow:0 15px 40px rgba(0,0,0,.7);display:none;}
+.ctx-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:9px;cursor:pointer;color:var(--muted-light);font-size:.8rem;font-weight:600;transition:all .15s;}
+.ctx-item:hover{background:rgba(124,58,237,.1);color:var(--violet-light);}
+.ctx-item.danger:hover{background:rgba(239,68,68,.1);color:var(--red);}
+.ctx-div{height:1px;background:var(--border);margin:5px 0;}
+
+/* ==============================
+   WIZARD MODAL
+============================== */
+.modal-content{background:var(--bg-void);border:1px solid rgba(255,255,255,.08);border-radius:28px;overflow:hidden;display:flex;flex-direction:row;}
+.wiz-sidebar{width:230px;background:var(--bg-surface);border-right:1px solid var(--border);padding:38px 24px;display:flex;flex-direction:column;flex-shrink:0;}
+.wiz-logo{width:44px;height:44px;background:linear-gradient(135deg,var(--violet),var(--cyan-dark));border-radius:13px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;color:#fff;margin-bottom:32px;}
+.wiz-step{display:flex;align-items:center;gap:13px;margin-bottom:26px;opacity:.35;transition:opacity .3s;}
+.wiz-step.active{opacity:1;}
+.wiz-step-num{width:30px;height:30px;border:1px solid var(--border);border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:var(--font);font-size:.75rem;background:var(--bg-input);color:var(--muted);transition:all .3s;flex-shrink:0;}
+.wiz-step.active .wiz-step-num{background:rgba(124,58,237,.15);border-color:rgba(124,58,237,.3);color:var(--violet-light);}
+.wiz-step-title{font-size:.78rem;font-weight:700;color:#fff;}
+.wiz-step-sub{font-family:var(--font);font-size:.58rem;color:var(--muted);margin-top:1px;}
+.wiz-spec{margin-top:auto;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;}
+.wiz-spec-label{font-family:var(--font);font-size:.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px;}
+.wiz-spec-val{font-family:var(--font);font-size:.72rem;color:var(--cyan);}
+.wiz-body{flex:1;padding:38px 42px;overflow-y:auto;background:var(--bg-panel);}
+.wiz-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px;}
+.wiz-title{font-size:1.5rem;font-weight:800;letter-spacing:-.03em;}
+
+/* UPLOAD ZONE */
+.upload-zone{border:1px dashed rgba(124,58,237,.3);border-radius:16px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .3s;background:rgba(124,58,237,.02);}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--violet);background:rgba(124,58,237,.06);}
+.upload-icon{width:48px;height:48px;background:rgba(124,58,237,.1);border-radius:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;color:var(--violet-light);font-size:1.3rem;}
+.upload-title{font-weight:700;font-size:.92rem;margin-bottom:4px;}
+.upload-sub{font-size:.72rem;color:var(--muted);}
+.upload-fmt{font-family:var(--font);font-size:.68rem;font-weight:600;letter-spacing:.02em;color:var(--cyan);margin-top:5px;}
+.emotion-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(124,58,237,.10);border:1px solid rgba(124,58,237,.28);font-size:.72rem;color:#ddd6fe;line-height:1.4;}
+.emotion-note strong{color:#fff;}
+.emotion-tips{margin-top:8px;padding:10px 12px;border-radius:10px;background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.22);}
+.emotion-tips-title{font-size:.66rem;color:#67e8f9;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;}
+.emotion-tips ul{margin:0;padding-left:16px;}
+.emotion-tips li{font-size:.7rem;color:#cbd5e1;line-height:1.45;margin:2px 0;}
+.upload-actions{display:flex;gap:8px;margin-top:16px;justify-content:center;}
+.ubtn{padding:8px 16px;border-radius:10px;font-family:var(--font);font-size:.72rem;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px;letter-spacing:.04em;}
+.ubtn-file{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--muted-light);}
+.ubtn-file:hover{color:#fff;border-color:rgba(255,255,255,.2);}
+.ubtn-mic{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;}
+.ubtn-mic.recording{background:rgba(239,68,68,.18);border-color:var(--red);color:var(--red);animation:pulse-rec 1.5s infinite;}
+@keyframes pulse-rec{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3);}50%{box-shadow:0 0 0 6px rgba(239,68,68,0);}}
+.mic-timer{font-family:var(--font);font-size:.68rem;color:var(--red);font-weight:700;display:none;margin-top:10px;}
+.mic-timer.active{display:block;}
+.file-loaded{display:none;align-items:center;gap:11px;padding:12px 14px;background:var(--bg-input);border:1px solid rgba(124,58,237,.2);border-radius:12px;margin-top:12px;}
+.file-loaded.visible{display:flex;}
+.file-icon{width:34px;height:34px;background:rgba(124,58,237,.1);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--violet-light);flex-shrink:0;}
+.file-name{font-weight:600;font-size:.8rem;color:#fff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.file-ok{font-family:var(--font);font-size:.6rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;}
+.dur-section{display:none;margin-top:12px;}
+.dur-section.visible{display:block;}
+.dur-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.dur-label{font-family:var(--font);font-size:.6rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
+.dur-value{font-family:var(--font);font-size:.95rem;font-weight:700;color:var(--green);}
+.dur-track{height:4px;background:var(--bg-input);border-radius:10px;position:relative;margin:22px 0 18px;}
+.dur-fill{height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan));border-radius:10px;transition:width .6s ease;}
+.dur-mark{position:absolute;top:50%;transform:translate(-50%,-50%);width:10px;height:10px;background:var(--bg-void);border:2px solid var(--border);border-radius:50%;transition:all .3s;}
+.dur-mark.reached{background:var(--violet-light);border-color:#fff;box-shadow:0 0 8px var(--violet);}
+.dur-mark-label{position:absolute;top:-18px;font-family:var(--font);font-size:.55rem;color:var(--muted);transform:translateX(-50%);font-weight:700;white-space:nowrap;}
+.dur-mark.reached .dur-mark-label{color:#fff;}
+
+/* SCRIPT GENERATOR */
+.script-gen{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-input);}
+.script-gen-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.script-gen-title{font-family:var(--font);font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;}
+.script-gen-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.script-duration{background:var(--bg-void);border:1px solid var(--border);color:var(--muted-light);padding:7px 9px;border-radius:9px;font-size:.72rem;outline:none;min-width:130px;}
+.script-theme{background:var(--bg-void);border:1px solid var(--border);color:var(--muted-light);padding:7px 9px;border-radius:9px;font-size:.72rem;outline:none;min-width:130px;}
+.script-btn{padding:8px 12px;background:rgba(124,58,237,.14);border:1px solid rgba(124,58,237,.32);border-radius:9px;color:var(--violet-light);font-size:.7rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.script-btn:hover{background:rgba(124,58,237,.24);border-color:var(--violet);}
+.script-copy{background:rgba(34,211,238,.08);border-color:rgba(34,211,238,.28);color:var(--cyan);}
+.script-copy:hover{background:rgba(34,211,238,.16);border-color:var(--cyan);}
+.script-text{width:100%;min-height:112px;resize:vertical;background:var(--bg-void);border:1px solid var(--border);color:#e5e7eb;border-radius:10px;padding:10px 12px;font-size:.78rem;line-height:1.45;outline:none;}
+.script-meta{margin-top:6px;font-size:.68rem;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+
+/* WHISPER */
+.whisper-row{display:none;align-items:center;gap:8px;margin-top:10px;}
+.whisper-row.visible{display:flex;}
+.whisper-model{background:var(--bg-input);border:1px solid var(--border);color:var(--muted-light);padding:9px 10px;border-radius:10px;font-family:var(--font);font-size:.72rem;outline:none;cursor:pointer;width:130px;flex-shrink:0;}
+.whisper-btn{flex:1;padding:9px 14px;background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.18);border-radius:10px;color:var(--cyan);font-family:var(--font);font-size:.72rem;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:7px;letter-spacing:.04em;text-transform:uppercase;}
+.whisper-btn:hover:not(:disabled){background:rgba(34,211,238,.14);border-color:var(--cyan);box-shadow:0 4px 14px rgba(34,211,238,.15);}
+.whisper-btn:disabled{opacity:.5;cursor:not-allowed;}
+.whisper-btn.done{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.3);color:var(--green);}
+
+/* METADATA STEP */
+.section-label{font-family:var(--font);font-size:.6rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px;margin-top:20px;display:block;}
+.kommz-select{width:100%;background:var(--bg-input);border:1px solid var(--border);color:#fff;padding:10px 14px;border-radius:11px;font-family:var(--font);font-size:.82rem;outline:none;cursor:pointer;transition:border-color .2s;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%236b7280' d='M5 7L0 2h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px;}
+.pill-group{display:flex;flex-wrap:wrap;gap:7px;}
+.pill{background:var(--bg-input);border:1px solid var(--border);color:var(--muted);padding:6px 13px;border-radius:100px;font-size:.72rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:var(--font);}
+.pill:hover{border-color:rgba(124,58,237,.3);color:var(--text);}
+.pill.on{background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.3);color:var(--violet-light);}
+.vis-row{display:flex;background:var(--bg-input);border:1px solid var(--border);border-radius:11px;overflow:hidden;}
+.vis-opt{flex:1;text-align:center;padding:10px;font-size:.75rem;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;font-family:var(--font);}
+.vis-opt.on{background:rgba(124,58,237,.12);color:var(--violet-light);}
+.sep{height:1px;background:var(--border);margin:20px 0;}
+.tos-check{width:17px;height:17px;accent-color:var(--violet);flex-shrink:0;margin-top:2px;cursor:pointer;}
+.tos-label{font-size:.75rem;color:var(--muted);font-weight:500;line-height:1.4;cursor:pointer;}
+.btn-save{padding:13px 24px;background:linear-gradient(135deg,var(--violet),#4f46e5);border:none;border-radius:12px;color:#fff;font-family:var(--font);font-size:.8rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:all .2s;box-shadow:0 6px 20px rgba(124,58,237,.3);}
+.btn-save:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(124,58,237,.5);}
+.btn-save:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.btn-back{background:none;border:none;color:var(--muted);font-family:var(--font);font-size:.8rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;padding:0;margin-bottom:20px;transition:color .2s;}
+.btn-back:hover{color:#fff;}
+
+/* API VIEW */
+.api-view{padding:30px;overflow-y:auto;height:100%;}
+.api-card{background:var(--bg-panel);border:1px solid var(--border);border-radius:18px;padding:26px;margin-bottom:22px;}
+.api-card-title{font-family:var(--font);font-size:.62rem;font-weight:700;color:var(--violet-light);text-transform:uppercase;letter-spacing:.15em;margin-bottom:4px;}
+.api-key-row{display:flex;margin-top:12px;}
+.api-key-input{flex:1;background:var(--bg-input);border:1px solid var(--border);border-right:none;color:var(--violet-light);padding:13px 16px;border-radius:12px 0 0 12px;font-family:var(--mono);font-size:.82rem;outline:none;}
+.api-copy-btn{padding:13px 22px;background:var(--violet);border:none;border-radius:0 12px 12px 0;color:#fff;font-family:var(--font);font-size:.78rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.api-copy-btn:hover{background:#6d28d9;}
+.code-block{background:#020206;border:1px solid var(--border);border-radius:12px;padding:18px;margin-top:14px;}
+.code-block pre{margin:0;color:var(--violet-light);font-family:var(--mono);font-size:.76rem;line-height:1.7;white-space:pre-wrap;}
+
+/* TOAST */
+.toast-stack{position:fixed;bottom:22px;right:22px;z-index:99999;display:flex;flex-direction:column;gap:8px;}
+.toast-item{display:flex;align-items:center;gap:11px;padding:13px 16px;background:var(--bg-panel);border:1px solid var(--border);border-radius:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);min-width:280px;animation:slideIn .3s ease;}
+@keyframes slideIn{from{opacity:0;transform:translateX(16px);}to{opacity:1;transform:translateX(0);}}
+.toast-title{font-weight:700;font-size:.78rem;color:#fff;}
+.toast-msg{font-size:.72rem;color:var(--muted-light);margin-top:1px;}
+.dn{display:none!important;}
+
+/* Compact mode: keep logout visible on smaller heights */
+@media (max-height: 920px){
+    .sidebar{padding:14px 10px;}
+    .brand{margin-bottom:18px;}
+    .nav-label{margin-bottom:6px;}
+    .nav-item{padding:8px 10px;font-size:.78rem;}
+    .sidebar-footer{padding-top:12px;}
+    .user-chip{padding:8px 10px;}
+    .logout-action{padding:7px 9px;font-size:.7rem;}
+    .trial-card{margin-top:8px;padding:8px 10px;}
+}
+    </style>
+</head>
+<body>
+
+    {% if not user %}
+
+    <!-- ════════════════════════════════════════════
+         ÉCRAN 0 — VÉRIFICATION LICENCE KEY (GATE)
+    ════════════════════════════════════════════ -->
+    <div id="screen-license" class="auth-screen">
+        <div class="glow glow-1"></div>
+        <div class="glow glow-2"></div>
+        <div class="auth-card" style="max-width:420px;">
+            <!-- Logo + titre -->
+            <div style="text-align:center;margin-bottom:32px;">
+                <div class="auth-logo" style="margin:0 auto 14px;width:60px;height:60px;font-size:1.8rem;">K</div>
+                <div style="font-size:1.3rem;font-weight:800;letter-spacing:-.03em;">Kommz Voice</div>
+                <div style="font-family:var(--font);font-size:.58rem;color:var(--violet-light);font-weight:600;letter-spacing:.15em;text-transform:uppercase;margin-top:4px;">Moteur vocal IA</div>
+            </div>
+
+            <!-- Icône verrou -->
+            <div style="text-align:center;margin-bottom:24px;">
+                <div style="width:56px;height:56px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);border-radius:16px;display:inline-flex;align-items:center;justify-content:center;font-size:1.6rem;">🔑</div>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <label class="field-label">Clé de licence Voice</label>
+                <input
+                    type="text"
+                    id="licenseKeyInput"
+                    class="kommz-input"
+                    placeholder="VCV-XXXXXXXXXX-XXXX-XXXXXXXX"
+                    style="font-family:var(--font);letter-spacing:.05em;text-align:center;font-size:.82rem;"
+                    oninput="this.value=this.value.toUpperCase()"
+                    onkeydown="if(event.key==='Enter')verifyLicenseKey()"
+                >
+            </div>
+
+            <div id="licenseKeyError" style="font-size:.72rem;color:var(--red);min-height:20px;margin-bottom:12px;text-align:center;"></div>
+
+            <button
+                id="btnVerifyLicense"
+                class="btn-violet"
+                onclick="verifyLicenseKey()"
+                style="margin-bottom:20px;"
+            >
+                Vérifier la licence →
+            </button>
+
+            <!-- Séparateur -->
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <div style="flex:1;height:1px;background:var(--border);"></div>
+                <span style="font-family:var(--font);font-size:.58rem;color:var(--muted);letter-spacing:.1em;">OU</span>
+                <div style="flex:1;height:1px;background:var(--border);"></div>
+            </div>
+
+            <!-- Déjà un compte -->
+            <button
+                class="btn-violet"
+                style="background:rgba(255,255,255,.04);border:1px solid var(--border);box-shadow:none;color:var(--muted-light);"
+                onclick="showLoginOnly()"
+                onmouseover="this.style.background='rgba(255,255,255,.07)'"
+                onmouseout="this.style.background='rgba(255,255,255,.04)'"
+            >
+                J'ai déjà un compte — Se connecter
+            </button>
+
+            <button
+                class="btn-violet"
+                style="margin-top:10px;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.3);box-shadow:none;color:var(--violet-light);"
+                onclick="startFreeTrialFlow()"
+            >
+                Essai gratuit 24h (30 min audio)
+            </button>
+
+            <p style="text-align:center;font-size:.65rem;color:var(--muted);margin-top:20px;">
+                Pas encore de licence ?
+                <a href="https://kommz.fr/#pricing" target="_blank" style="color:var(--violet-light);text-decoration:none;font-weight:700;">Voir les offres →</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         ÉCRAN 1 — LOGIN / REGISTER (après validation)
+    ════════════════════════════════════════════ -->
+    <div id="screen-auth" class="auth-screen dn">
+        <div class="glow glow-1"></div>
+        <div class="glow glow-2"></div>
+        <div class="auth-card">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:28px;">
+                <div class="auth-logo">K</div>
+                <div>
+                    <div style="font-size:1.25rem;font-weight:800;letter-spacing:-.03em;">Kommz Voice</div>
+                    <div style="font-family:var(--font);font-size:.6rem;color:var(--violet-light);font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin-top:2px;">Moteur vocal IA</div>
+                </div>
+                <!-- Badge licence validée -->
+                <div id="licenseBadgeAuth" style="margin-left:auto;display:none;align-items:center;gap:5px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);color:#10b981;padding:4px 10px;border-radius:20px;font-family:var(--font);font-size:.58rem;font-weight:700;white-space:nowrap;">
+                    ✓ LICENCE OK
+                </div>
+            </div>
+            <div class="auth-tabs">
+                <div class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Connexion</div>
+                <div class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Inscription</div>
+            </div>
+            <div id="auth-login">
+                <form onsubmit="handleAuth(event,'/login')">
+                    <div style="margin-bottom:16px;"><label class="field-label">Identifiant réseau</label><input type="email" name="email" id="loginEmail" class="kommz-input" placeholder="votre@email.com" required></div>
+                    <div style="margin-bottom:24px;"><label class="field-label">Clé d'accès</label><input type="password" name="password" class="kommz-input" placeholder="••••••••••••" required></div>
+                    <button class="btn-violet">Initialiser le système →</button>
+                </form>
+            </div>
+            <div id="auth-register" class="dn">
+                <form onsubmit="handleAuth(event,'/register')">
+                    <input type="hidden" name="license_key" id="hiddenLicenseKey">
+                    <input type="hidden" name="trial_mode" id="hiddenTrialMode" value="0">
+                    <input type="hidden" name="trial_fingerprint" id="hiddenTrialFingerprint" value="">
+                    <div style="margin-bottom:16px;"><label class="field-label">Créer un identifiant</label><input type="email" name="email" id="registerEmail" class="kommz-input" placeholder="votre@email.com" required></div>
+                    <div style="margin-bottom:24px;"><label class="field-label">Définir une clé</label><input type="password" name="password" class="kommz-input" placeholder="Mot de passe fort" required></div>
+                    <button class="btn-violet">Créer le compte →</button>
+                </form>
+            </div>
+            <p style="text-align:center;margin-top:18px;font-size:.68rem;color:var(--muted);">
+                <a href="#" onclick="document.getElementById('screen-license').classList.remove('dn');document.getElementById('screen-auth').classList.add('dn');return false;" style="color:var(--muted);text-decoration:none;">← Revenir à la vérification de licence</a>
+            </p>
+        </div>
+    </div>
+
+    {% endif %}
+
+    {% if user %}
+    <div class="dashboard">
+        <div class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">K</div>
+                <div><div class="brand-name">KOMMZ VOICE</div><div class="brand-sub">Moteur vocal IA</div></div>
+            </div>
+            <div class="nav-label" style="margin-bottom:10px;">Studio</div>
+            <div id="nav-lab" class="nav-item active" onclick="switchTab('lab')">
+                <i class="bi bi-person-bounding-box"></i> Voice Lab
+                <span class="nav-badge" id="profileBadge">0</span>
+            </div>
+            <div id="nav-api" class="nav-item" onclick="switchTab('api')">
+                <i class="bi bi-cpu-fill"></i> Diamond API
+            </div>
+            {% if secure_tts_enabled %}
+            <div id="nav-secure" class="nav-item" onclick="switchTab('secure')">
+                <i class="bi bi-shield-lock-fill"></i> Secure TTS
+            </div>
+            {% endif %}
+            <div class="sidebar-footer">
+                <div class="user-chip">
+                    <div class="user-avatar">{{ user.email[0]|upper }}</div>
+                    <div style="flex:1;min-width:0;"><div class="user-email">{{ user.email }}</div><div class="user-status">Authentified ✓</div></div>
+                    <a href="#" class="logout-btn" onclick="doLogout(event)"><i class="bi bi-power"></i></a>
+                </div>
+                <a href="#" class="logout-action" onclick="doLogout(event)"><i class="bi bi-box-arrow-right"></i> Déconnexion</a>
+                <div id="trialStatusCard" class="trial-card dn">
+                    <div class="trial-title">Plan Essai</div>
+                    <div class="trial-main" id="trialRemainingMain">Calcul...</div>
+                    <div class="trial-sub" id="trialRemainingSub"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-view">
+            <!-- VOICE LAB -->
+            <div id="view-lab" class="lab-view">
+                <div class="lab-header">
+                    <div>
+                        <div class="lab-eyebrow">// Kommz · moteur vocal IA</div>
+                        <div class="lab-title">Voice <span>Lab</span></div>
+                        <div class="lab-sub">Banque d'empreintes vocales · Clonage vocal IA via Modal A10G</div>
+                    </div>
+                    <div class="lab-actions">
+                        <div class="xtts-status" id="xttsStatusBadge" title="Vérification serveur de clonage...">
+                            <span class="xtts-dot"></span>
+                            <span id="xttsStatusText">Serveur clonage: vérification...</span>
+                        </div>
+                        <button class="btn-new" onclick="openWizard()"><i class="bi bi-plus-lg"></i> Nouveau Clone</button>
+                    </div>
+                </div>
+                <div class="voice-grid" id="voiceGrid"></div>
+            </div>
+
+            <!-- API -->
+            <div id="view-api" class="api-view dn">
+                <h1 style="font-size:1.8rem;font-weight:800;letter-spacing:-.04em;margin-bottom:8px;">API Diamond Core</h1>
+                <p style="color:var(--muted-light);margin-bottom:28px;font-size:.88rem;">Connectez vos applications au moteur vocal IA via REST.</p>
+                <div class="api-card">
+                    <div class="api-card-title">Votre clé d'accès privée</div>
+                    <p style="font-size:.78rem;color:var(--muted);margin-bottom:0;">Ne jamais partager cette clé.</p>
+                    <div class="api-key-row">
+                        <input type="text" id="userApiKey" class="api-key-input" value="{{ user.api_key }}" readonly>
+                        <button class="api-copy-btn" onclick="copyApiKey()">Copier</button>
+                    </div>
+                </div>
+                <div class="api-card">
+                    <div style="font-size:.95rem;font-weight:700;margin-bottom:8px;">Documentation d'inférence</div>
+                    <p style="font-size:.78rem;color:var(--muted-light);margin-bottom:0;">Endpoint POST pour générer de l'audio :</p>
+                    <div class="code-block"><pre>curl -X POST https://votre-domaine-render.com/v1/synthesis \
+  -H "Authorization: Bearer {{ user.api_key }}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Le message à synthétiser...",
+    "voice_id": "votre_id_de_voix",
+    "speed": 1.0,
+    "temperature": 0.7,
+    "language": "fr"
+  }'</pre></div>
+                </div>
+            </div>
+            {% if secure_tts_enabled %}
+            <div id="view-secure" class="secure-view dn">
+                <div class="secure-wrap">
+                    <div class="secure-title">Secure TTS Multi-langue</div>
+                    <div class="secure-sub">Zone protégée par mot de passe pour synthèse locale navigateur.</div>
+                    <div class="secure-card" id="secureLockBox">
+                        <label class="secure-label" for="securePassword">Mot de passe</label>
+                        <div class="secure-row">
+                            <input id="securePassword" type="password" class="secure-input" placeholder="Entrer le mot de passe">
+                            <button class="secure-btn primary" onclick="unlockSecureTts()">Déverrouiller</button>
+                        </div>
+                        <div class="secure-note" style="margin-top:10px;">Accès requis pour activer l'onglet.</div>
+                    </div>
+                    <div class="secure-card dn" id="secureMainBox">
+                        <label class="secure-label" for="secureProfile">Voix Voice Lab</label>
+                        <select id="secureProfile" class="secure-select"></select>
+                        <label class="secure-label" for="secureLang">Langue cible</label>
+                        <select id="secureLang" class="secure-select">
+                            <option value="fr-FR">Français</option>
+                            <option value="en-US">English</option>
+                            <option value="ja-JP">日本語</option>
+                            <option value="es-ES">Español</option>
+                            <option value="de-DE">Deutsch</option>
+                            <option value="it-IT">Italiano</option>
+                            <option value="pt-PT">Português</option>
+                        </select>
+                        <label class="secure-label" for="secureText" style="margin-top:12px;">Texte</label>
+                        <textarea id="secureText" class="secure-textarea" placeholder="Tape ton texte ici..."></textarea>
+                        <div class="secure-actions">
+                            <button class="secure-btn primary" onclick="secureSpeakLab()">Lire en Qualite Max (XTTS)</button>
+                            <button class="secure-btn warn" onclick="secureStop()">Stop</button>
+                        </div>
+                        <div class="secure-note" style="margin-top:10px;">Mode qualite max: XTTS Voice Lab uniquement (stabilite + fidelite).</div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- CONTEXT MENU -->
+    <div id="ctxMenu" class="ctx-menu">
+        <div class="ctx-item" onclick="app.copyId()"><i class="bi bi-clipboard2-data"></i> Copier l'ID</div>
+        <div class="ctx-item" onclick="app.previewCtx()"><i class="bi bi-play-circle"></i> Écouter</div>
+        <div class="ctx-div"></div>
+        <div class="ctx-item danger" onclick="app.deleteVoice()"><i class="bi bi-trash3"></i> Révoquer</div>
+    </div>
+
+    <!-- WIZARD MODAL -->
+    <div class="modal fade" id="wizModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered" style="max-width:1140px;">
+            <div class="modal-content border-0" style="min-height:560px;">
+                <!-- WIZ SIDEBAR -->
+                <div class="wiz-sidebar">
+                    <div class="wiz-logo">K</div>
+                    <div class="wiz-step active" id="wiz-ind-1">
+                        <div class="wiz-step-num">01</div>
+                        <div><div class="wiz-step-title">Audio Data</div><div class="wiz-step-sub">Acquisition source</div></div>
+                    </div>
+                    <div class="wiz-step" id="wiz-ind-2">
+                        <div class="wiz-step-num">02</div>
+                        <div><div class="wiz-step-title">Metadata</div><div class="wiz-step-sub">Classification</div></div>
+                    </div>
+                    <div class="wiz-spec">
+                        <div class="wiz-spec-label">Output Format</div>
+                        <div class="wiz-spec-val">24kHz · 16-bit</div>
+                    </div>
+                </div>
+
+                <!-- WIZ BODY -->
+                <div class="wiz-body">
+
+                    <!-- STEP 1 -->
+                    <div id="wiz-step-1">
+                        <div class="wiz-top">
+                            <div class="wiz-title">Acquisition Audio</div>
+                            <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
+                        </div>
+
+                        <div class="upload-zone" id="uploadZone"
+                             onclick="document.getElementById('audioFile').click()"
+                             ondragover="doDragOver(event)" ondragleave="doDragLeave(event)" ondrop="doDrop(event)">
+                            <div class="upload-icon"><i class="bi bi-cloud-arrow-up-fill"></i></div>
+                            <div class="upload-title">Flux d'entrée vocal — moteur vocal IA</div>
+                            <div class="upload-sub">Injectez 10 à 90 secondes de votre voix pour le clonage optimal</div>
+                            <div class="upload-fmt">WAV · MP3 · FLAC · M4A · WEBM — Max 32MB</div>
+                            <div class="emotion-note">
+                                <i class="bi bi-emoji-smile me-1"></i>
+                                <strong>Émotions vocales :</strong> le moteur peut reproduire l'émotion (calme, énergie, intensité), mais le résultat dépend directement de votre façon de parler (intonation, rythme, articulation).
+                            </div>
+                            <div class="emotion-tips">
+                                <div class="emotion-tips-title">Conseils de prise rapide</div>
+                                <ul>
+                                    <li>Parlez naturellement, sans accélérer, avec un volume stable.</li>
+                                    <li>Variez légèrement le ton pour capturer mieux vos émotions.</li>
+                                    <li>Évitez les bruits de fond et gardez 10 à 30s de voix claire.</li>
+                                </ul>
+                            </div>
+                            <div class="upload-actions" onclick="event.stopPropagation()">
+                                <div class="ubtn ubtn-file" onclick="document.getElementById('audioFile').click()"><i class="bi bi-folder2-open"></i> Parcourir</div>
+                                <div class="ubtn ubtn-mic" id="micBtn" onclick="app.toggleMic()">
+                                    <i class="bi bi-mic-fill" id="micIcon"></i>
+                                    <span id="micLabel">Microphone</span>
+                                </div>
+                            </div>
+                            <div class="mic-timer" id="micTimer">⏺ 00:00 — Capture en cours</div>
+                        </div>
+
+                        <div class="file-loaded" id="fileLoaded">
+                            <div class="file-icon"><i class="bi bi-music-note-list"></i></div>
+                            <div style="flex:1;min-width:0;">
+                                <div class="file-name" id="fileName">audio.wav</div>
+                                <div class="file-ok">Prêt · moteur vocal IA</div>
+                            </div>
+                        </div>
+
+                        <div class="dur-section" id="durSection">
+                            <div class="dur-header">
+                                <span class="dur-label">Durée détectée</span>
+                                <span class="dur-value" id="durVal">0s</span>
+                            </div>
+                            <div class="dur-track">
+                                <div class="dur-fill" id="durFill"></div>
+                                <div class="dur-mark" id="mark10" style="left:11.11%"><span class="dur-mark-label">10s MIN</span></div>
+                                <div class="dur-mark" id="mark30" style="left:33.33%"><span class="dur-mark-label">30s IDEAL</span></div>
+                                <div class="dur-mark" id="mark90" style="left:100%"><span class="dur-mark-label">90s MAX</span></div>
+                            </div>
+                        </div>
+
+                        <div class="script-gen">
+                            <div class="script-gen-top">
+                                <div class="script-gen-title">Générateur de texte à dire (audio & micro)</div>
+                                <div class="script-gen-controls">
+                                    <select id="scriptTheme" class="script-theme">
+                                        <option value="gaming" selected>Thème: Gaming</option>
+                                        <option value="narration">Thème: Narration</option>
+                                        <option value="podcast">Thème: Podcast</option>
+                                        <option value="pro">Thème: Professionnel</option>
+                                    </select>
+                                    <select id="scriptDuration" class="script-duration">
+                                        <option value="auto">Durée auto (détectée/live)</option>
+                                        <option value="10">10s (mini)</option>
+                                        <option value="20">20s</option>
+                                        <option value="30" selected>30s (idéal)</option>
+                                        <option value="45">45s</option>
+                                        <option value="60">60s</option>
+                                        <option value="90">90s (max)</option>
+                                    </select>
+                                    <button class="script-btn" type="button" onclick="app.generateScript()"><i class="bi bi-stars"></i> Générer</button>
+                                    <button class="script-btn script-copy" type="button" onclick="app.copyGeneratedScript()"><i class="bi bi-clipboard"></i> Copier</button>
+                                </div>
+                            </div>
+                            <textarea id="generatedScript" class="script-text" placeholder="Cliquez sur Générer pour obtenir un texte calibré selon la durée choisie..."></textarea>
+                            <div class="script-meta">
+                                <span id="scriptMeta">Durée cible: 30s · ~70 mots</span>
+                                <span>Astuce: lisez naturellement, sans accélérer.</span>
+                            </div>
+                        </div>
+
+                        <!-- WHISPER : analyse texte de référence -->
+                        <div class="whisper-row" id="whisperRow">
+                            <select id="whisperModel" class="whisper-model">
+                                <option value="small">Whisper Small</option>
+                                <option value="large">Whisper Large v3</option>
+                            </select>
+                            <button class="whisper-btn" id="whisperBtn" onclick="app.runWhisper()">
+                                <i class="bi bi-magic" id="whisperIcon"></i>
+                                <span id="whisperLabel">Analyser & Transcrire</span>
+                            </button>
+                        </div>
+
+                        <div style="margin-top:24px;display:flex;justify-content:flex-end;padding-top:20px;border-top:1px solid var(--border);">
+                            <button class="btn-new" onclick="goStep(2)">Étape suivante <i class="bi bi-arrow-right ms-1"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 2 -->
+                    <div id="wiz-step-2" class="dn">
+                        <div class="wiz-top">
+                            <div class="wiz-title">Empreinte Metadata</div>
+                            <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
+                        </div>
+                        <button class="btn-back" onclick="goStep(1)"><i class="bi bi-arrow-left-circle"></i> Retour</button>
+
+                        <div class="row g-4">
+                            <div class="col-lg-12">
+                                <span class="section-label" style="margin-top:0;">Nom de l'empreinte</span>
+                                <input type="text" id="profileName" class="kommz-input" placeholder="ex: Narrateur Studio #01" style="margin-bottom:14px;">
+                                <span class="section-label">Description (facultatif)</span>
+                                <textarea id="profileDesc" class="kommz-input" rows="4" style="resize:none;margin-bottom:14px;" placeholder="Usage prévu : Narration, Gaming, Podcast..."></textarea>
+                                <span class="section-label">Genre</span>
+                                <div class="pill-group" style="margin-bottom:14px;">
+                                    <div class="pill" onclick="togglePill(this)">Féminin</div>
+                                    <div class="pill" onclick="togglePill(this)">Masculin</div>
+                                    <div class="pill" onclick="togglePill(this)">Enfantin</div>
+                                    <div class="pill" onclick="togglePill(this)">Neutre</div>
+                                    <div class="pill" onclick="togglePill(this)">Robotique / IA</div>
+                                </div>
+                                <span class="section-label">Tranche d'âge</span>
+                                <div class="pill-group" style="margin-bottom:14px;">
+                                    <div class="pill" onclick="togglePill(this)">Enfant</div>
+                                    <div class="pill" onclick="togglePill(this)">Adolescent</div>
+                                    <div class="pill" onclick="togglePill(this)">Jeune Adulte</div>
+                                    <div class="pill" onclick="togglePill(this)">Adulte</div>
+                                    <div class="pill" onclick="togglePill(this)">Senior</div>
+                                </div>
+                                <span class="section-label">Visibilité</span>
+                                <div class="vis-row">
+                                    <div class="vis-opt on" onclick="setVis(this,'public')">Public</div>
+                                    <div class="vis-opt" onclick="setVis(this,'private')">Privé</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sep"></div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+                            <div style="display:flex;align-items:flex-start;gap:10px;">
+                                <input type="checkbox" class="tos-check" id="tosCheck">
+                                <label for="tosCheck" class="tos-label">J'assume l'originalité du clone et détiens tous les droits d'exploitation légaux.</label>
+                            </div>
+                            <button class="btn-save" id="btnSave" onclick="app.saveProfile()">
+                                <i class="bi bi-fingerprint me-1"></i> Enregistrer le clone
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN -->
+    <div style="display:none;">
+        <input type="file" id="audioFile" accept=".wav,.mp3,.ogg,.flac,.webm,.m4a">
+        <textarea id="referenceText"></textarea>
+        <input type="hidden" id="profileTags" value="">
+        <input type="hidden" id="profileVisibility" value="public">
+    </div>
+    <div class="toast-stack" id="toastStack"></div>
+    {% endif %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    /* Force route root when opened via static path */
+    if (window.location.pathname.toLowerCase().includes('/static/index.html')) {
+        window.location.replace('/');
+    }
+
+    /* === LICENCE KEY GATE === */
+    let _verifiedLicenseKey = '';
+    let _trialMode = false;
+
+    function buildTrialFingerprint() {
+        try {
+            const parts = [
+                navigator.userAgent || '',
+                navigator.language || '',
+                Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+                String(screen.width || 0),
+                String(screen.height || 0),
+                String(screen.colorDepth || 0),
+            ];
+            return btoa(parts.join('|')).slice(0, 180);
+        } catch {
+            return 'fp-unavailable';
+        }
+    }
+
+    function startFreeTrialFlow() {
+        _trialMode = true;
+        _verifiedLicenseKey = '';
+        document.getElementById('screen-license').classList.add('dn');
+        document.getElementById('screen-auth').classList.remove('dn');
+        switchAuthTab('register');
+        const hiddenTrial = document.getElementById('hiddenTrialMode');
+        const hiddenKey = document.getElementById('hiddenLicenseKey');
+        const hiddenFp = document.getElementById('hiddenTrialFingerprint');
+        if (hiddenTrial) hiddenTrial.value = '1';
+        if (hiddenKey) hiddenKey.value = '';
+        if (hiddenFp) hiddenFp.value = buildTrialFingerprint();
+        const badge = document.getElementById('licenseBadgeAuth');
+        if (badge) {
+            badge.style.display = 'inline-flex';
+            badge.textContent = 'ESSAI 24H';
+        }
+    }
+
+    async function verifyLicenseKey() {
+        const input = document.getElementById('licenseKeyInput');
+        const errBox = document.getElementById('licenseKeyError');
+        const btn = document.getElementById('btnVerifyLicense');
+        const key = input ? input.value.trim() : '';
+
+        if (!key) {
+            errBox.textContent = '⚠️ Entrez votre clé de licence (format VCV-...)';
+            return;
+        }
+        if (!key.startsWith('VCV-') && !['VTP-VOICE-ADMIN','NICOLAS-VOICE-PRO'].includes(key)) {
+            errBox.textContent = '❌ Format invalide — la clé doit commencer par VCV-';
+            return;
+        }
+
+        btn.textContent = '⏳ Vérification...';
+        btn.disabled = true;
+        errBox.textContent = '';
+
+        try {
+            const r = await fetch('/license/voice/verify-web', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ license_key: key })
+            });
+            const d = await r.json();
+
+            if (!d.valid) {
+                errBox.textContent = '❌ ' + (d.error || 'Clé invalide ou expirée');
+                return;
+            }
+
+            // Clé valide ✓
+            _trialMode = false;
+            _verifiedLicenseKey = key;
+            document.getElementById('screen-license').classList.add('dn');
+            document.getElementById('screen-auth').classList.remove('dn');
+
+            // Si déjà liée à un compte → afficher connexion avec l'email pré-rempli
+            if (d.already_used && d.email) {
+                switchAuthTab('login');
+                const loginEmail = document.getElementById('loginEmail');
+                if (loginEmail) loginEmail.value = d.email;
+                errBox.textContent = '';
+            } else {
+                // Nouvelle clé → afficher inscription
+                switchAuthTab('register');
+                const hiddenKey = document.getElementById('hiddenLicenseKey');
+                if (hiddenKey) hiddenKey.value = key;
+                const hiddenTrial = document.getElementById('hiddenTrialMode');
+                const hiddenFp = document.getElementById('hiddenTrialFingerprint');
+                if (hiddenTrial) hiddenTrial.value = '0';
+                if (hiddenFp) hiddenFp.value = '';
+            }
+
+            // Afficher badge licence OK
+            const badge = document.getElementById('licenseBadgeAuth');
+            if (badge) badge.style.display = 'inline-flex';
+
+        } catch(e) {
+            // Si la route n'existe pas encore (dev sans Flask), laisser passer
+            errBox.textContent = '⚠️ Service de vérification indisponible — accès direct.';
+            setTimeout(() => {
+                _verifiedLicenseKey = key;
+                document.getElementById('screen-license').classList.add('dn');
+                document.getElementById('screen-auth').classList.remove('dn');
+                switchAuthTab('register');
+                // Fallback: conserver la clé pour que /register reçoive bien license_key.
+                const hiddenKey = document.getElementById('hiddenLicenseKey');
+                const hiddenTrial = document.getElementById('hiddenTrialMode');
+                const hiddenFp = document.getElementById('hiddenTrialFingerprint');
+                if (hiddenKey) hiddenKey.value = key;
+                if (hiddenTrial) hiddenTrial.value = '0';
+                if (hiddenFp) hiddenFp.value = '';
+            }, 1500);
+        } finally {
+            btn.textContent = 'Vérifier la licence →';
+            btn.disabled = false;
+        }
+    }
+
+    function showLoginOnly() {
+        // Client avec un compte existant, pas besoin de vérifier la licence
+        _trialMode = false;
+        document.getElementById('screen-license').classList.add('dn');
+        document.getElementById('screen-auth').classList.remove('dn');
+        switchAuthTab('login');
+        // Masquer l'onglet Inscription pour les utilisateurs existants
+        const tabReg = document.getElementById('tab-register');
+        if (tabReg) tabReg.style.display = 'none';
+    }
+
+    /* === AUTH === */
+    function switchAuthTab(tab){
+        document.querySelectorAll('.auth-tab').forEach((t,i)=>t.classList.toggle('active',(i===0&&tab==='login')||(i===1&&tab==='register')));
+        document.getElementById('auth-login').classList.toggle('dn',tab!=='login');
+        document.getElementById('auth-register').classList.toggle('dn',tab!=='register');
+    }
+    async function handleAuth(e,url){
+        e.preventDefault();
+        const fd=new FormData(e.target),btn=e.target.querySelector('button');
+        btn.disabled=true;btn.textContent='Initialisation...';
+        try{
+            const payload = Object.fromEntries(fd);
+            let endpoint = url;
+            if (url === '/register' && String(payload.trial_mode || '0') === '1') {
+                endpoint = '/trial/register';
+                payload.license_key = '';
+                payload.trial_fingerprint = payload.trial_fingerprint || buildTrialFingerprint();
+            }
+            // BUG 2 fix — valider license_key non vide pour /register hors trial
+            if (url === '/register' && String(payload.trial_mode || '0') !== '1') {
+                if (!payload.license_key || payload.license_key.trim() === '') {
+                    btn.disabled=false;btn.textContent='Créer →';
+                    showToast('Erreur','Clé de licence manquante. Revenez à l'étape précédente et vérifiez votre clé VCV-.','error');
+                    return;
+                }
+            }
+            const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            const res=await r.json();
+            if(res.success){window.location.assign('/');}else{btn.disabled=false;btn.textContent=url==='/login'?'Initialiser →':'Créer →';showToast('Erreur',res.error||'Auth échouée','error');}
+        }catch(ex){btn.disabled=false;btn.textContent='Réessayer →';}
+    }
+
+    /* === NAV === */
+    function switchTab(tab){
+        ['lab','api','secure'].forEach(k=>{
+            const view = document.getElementById('view-'+k);
+            const nav = document.getElementById('nav-'+k);
+            if(view) view.classList.toggle('dn',k!==tab);
+            if(nav) nav.classList.toggle('active',k===tab);
+        });
+        if(tab==='lab')window.app?.loadProfiles();
+    }
+
+    /* === WIZARD === */
+    function openWizard(){
+        window.app?.resetWizard();
+        goStep(1);
+        new bootstrap.Modal(document.getElementById('wizModal')).show();
+    }
+    function goStep(n){
+        [1,2].forEach(i=>{
+            document.getElementById('wiz-step-'+i).classList.toggle('dn',i!==n);
+            document.getElementById('wiz-ind-'+i).classList.toggle('active',i===n);
+        });
+    }
+    function togglePill(el){
+        el.classList.toggle('on');
+        document.getElementById('profileTags').value=Array.from(document.querySelectorAll('.pill.on')).map(p=>p.textContent.trim()).join(', ');
+    }
+    function setVis(el,val){
+        document.querySelectorAll('.vis-opt').forEach(o=>o.classList.remove('on'));
+        el.classList.add('on');
+        document.getElementById('profileVisibility').value=val;
+    }
+
+    /* === DRAG & DROP === */
+    function doDragOver(e){e.preventDefault();document.getElementById('uploadZone').classList.add('dragover');}
+    function doDragLeave(){document.getElementById('uploadZone').classList.remove('dragover');}
+    function doDrop(e){e.preventDefault();doDragLeave();const f=e.dataTransfer.files[0];if(f)window.app?.uploadFile(f);}
+
+    /* === API === */
+    function copyApiKey(){const v=document.getElementById('userApiKey')?.value;if(v){navigator.clipboard.writeText(v);showToast('Système','Clé API copiée.','success');}}
+    async function doLogout(e){
+        if(e)e.preventDefault();
+        try{await fetch('/logout',{method:'POST',credentials:'same-origin'});}catch(_e){}
+        window.location.href='/';
+    }
+
+    const SECURE_TTS_PREUNLOCKED = {% if secure_tts_unlocked %}true{% else %}false{% endif %};
+    let secureUnlocked = SECURE_TTS_PREUNLOCKED;
+    let secureStopRequested = false;
+    let secureCurrentAudio = null;
+
+    function applySecureUnlockUi(){
+        if(!secureUnlocked) return;
+        document.getElementById('secureLockBox')?.classList.add('dn');
+        document.getElementById('secureMainBox')?.classList.remove('dn');
+        refreshSecureProfileOptions();
+    }
+
+    async function unlockSecureTts(){
+        const input = document.getElementById('securePassword');
+        if(!input) return;
+        const password = (input.value || '').trim();
+        if(!password){
+            showToast('Secure TTS','Mot de passe requis.','warning');
+            return;
+        }
+        try{
+            const r = await fetch('/api/secure-tts/unlock', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({password})
+            });
+            const d = await r.json().catch(() => ({}));
+            if(!r.ok || !d?.success){
+                throw new Error(d?.error || `Erreur HTTP ${r.status}`);
+            }
+        }catch(_e){
+            showToast('Secure TTS','Mot de passe invalide.','error');
+            return;
+        }
+        secureUnlocked = true;
+        applySecureUnlockUi();
+        showToast('Secure TTS','Accès autorisé.','success');
+    }
+
+    function normalizeXttsLang(langTag){
+        const short = String(langTag || 'fr-FR').split('-')[0].toLowerCase();
+        const allowed = new Set(['fr','en','ja','es','de','it','pt','ru','ko','zh']);
+        return allowed.has(short) ? short : 'fr';
+    }
+
+    function chunkTextForXtts(text, maxLen=180){
+        const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+        if(!cleaned) return [];
+        const sentences = cleaned.split(/(?<=[\.\!\?\n;:])\s+/).filter(Boolean);
+        const chunks = [];
+        let current = '';
+        for(const s of sentences){
+            if(!current){
+                current = s;
+                continue;
+            }
+            if((current.length + 1 + s.length) <= maxLen){
+                current += ' ' + s;
+            }else{
+                chunks.push(current);
+                current = s;
+            }
+        }
+        if(current) chunks.push(current);
+        if(!chunks.length && cleaned) chunks.push(cleaned.slice(0, maxLen));
+        return chunks;
+    }
+
+    function normalizePromptText(text){
+        return String(text || '')
+            .replace(/\.{2,}/g, '.')
+            .replace(/([!?;,])\1+/g, '$1')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function refreshSecureProfileOptions(){
+        const el = document.getElementById('secureProfile');
+        if(!el) return;
+        const profiles = Array.isArray(window.app?.profiles) ? window.app.profiles : [];
+        el.innerHTML = '';
+        if(!profiles.length){
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Aucune voix disponible';
+            el.appendChild(opt);
+            return;
+        }
+        profiles.forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = `${p.name || 'Sans nom'} (${(p.language || 'fr').toUpperCase()})`;
+            el.appendChild(opt);
+        });
+    }
+
+
+    async function secureSpeakLab(){
+        if(!secureUnlocked){
+            showToast('Secure TTS','Zone verrouillee.','warning');
+            return;
+        }
+        const profileId = document.getElementById('secureProfile')?.value || '';
+        const text = normalizePromptText(document.getElementById('secureText')?.value || '');
+        const lang = normalizeXttsLang(document.getElementById('secureLang')?.value || 'fr-FR');
+        if(!profileId){
+            showToast('Secure TTS','Choisissez une voix Voice Lab.','warning');
+            return;
+        }
+        if(!text){
+            showToast('Secure TTS','Texte requis.','warning');
+            return;
+        }
+        try{
+            secureStopRequested = false;
+            const chunks = chunkTextForXtts(text, 180);
+            if(!chunks.length){
+                throw new Error('Texte invalide.');
+            }
+
+            showToast('Secure TTS', 'Generation XTTS qualite max: ' + chunks.length + ' segment(s)...', 'info');
+            const urls = [];
+            for(let i=0; i<chunks.length; i++){
+                if(secureStopRequested) break;
+                const r = await fetch('/api/generate',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({
+                        text: chunks[i],
+                        profile_id: profileId,
+                        language: lang,
+                        speed: 1.04,
+                        temperature: 0.20
+                    })
+                });
+                const d = await r.json();
+                if(!r.ok || !d?.success){
+                    throw new Error(d?.error || `Erreur HTTP ${r.status}`);
+                }
+                if(!d.audio_url){
+                    throw new Error('Audio genere mais URL indisponible.');
+                }
+                urls.push(d.audio_url + (d.audio_url.includes('?') ? '&' : '?') + 't=' + Date.now() + '_' + i);
+            }
+
+            for(const url of urls){
+                if(secureStopRequested) break;
+                secureCurrentAudio = new Audio(url);
+                await new Promise((resolve, reject) => {
+                    if(!secureCurrentAudio) return reject(new Error('Audio indisponible.'));
+                    secureCurrentAudio.oncanplay = () => resolve();
+                    secureCurrentAudio.onerror = () => reject(new Error('URL audio invalide ou format non supporte.'));
+                    secureCurrentAudio.load();
+                });
+                await secureCurrentAudio.play();
+                await new Promise((resolve) => {
+                    if(!secureCurrentAudio) return resolve();
+                    secureCurrentAudio.onended = () => resolve();
+                });
+            }
+            secureCurrentAudio = null;
+            if(!secureStopRequested){
+                showToast('Secure TTS','Lecture XTTS terminee.','success');
+            }
+        }catch(e){
+            secureCurrentAudio = null;
+            showToast('Secure TTS', e.message || 'Generation impossible.', 'error');
+        }
+    }
+    function secureStop(){
+        secureStopRequested = true;
+        if(secureCurrentAudio){
+            try{
+                secureCurrentAudio.pause();
+                secureCurrentAudio.currentTime = 0;
+            }catch(_e){}
+            secureCurrentAudio = null;
+        }
+    }
+
+    /* === TOAST === */
+    function showToast(title,msg,type='info'){
+        const cfg={success:{i:'bi-check-circle-fill',c:'var(--green)'},error:{i:'bi-x-circle-fill',c:'var(--red)'},info:{i:'bi-info-circle-fill',c:'var(--violet-light)'},warning:{i:'bi-exclamation-triangle-fill',c:'var(--yellow)'}};
+        const{i,c}=cfg[type]||cfg.info;
+        const stack=document.getElementById('toastStack');if(!stack)return;
+        const el=document.createElement('div');el.className='toast-item';
+        el.innerHTML=`<i class="bi ${i}" style="color:${c};font-size:1rem;flex-shrink:0;"></i><div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+        stack.appendChild(el);setTimeout(()=>el.remove(),4000);
+    }
+
+    /* === APP === */
+    class KommzApp {
+        constructor(){
+            this.fileId=null;this.profiles=[];this.previewAudio=null;
+            this.currentPreviewId=null;this.ctxId=null;
+            this.mediaRecorder=null;this.micChunks=[];
+            this.isMicRec=false;this.micSec=0;this.micInterval=null;
+            this.detectedDurationSec=0;
+            this.xttsStatusNotifiedState = "";
+            const audioInput=document.getElementById('audioFile');
+            if(audioInput){audioInput.addEventListener('change',e=>{const f=e.target.files[0];if(f)this.uploadFile(f);});}
+            const scriptDur=document.getElementById('scriptDuration');
+            if(scriptDur){scriptDur.addEventListener('change',()=>this.updateScriptMeta());}
+            const scriptTheme=document.getElementById('scriptTheme');
+            if(scriptTheme){scriptTheme.addEventListener('change',()=>this.updateScriptMeta());}
+            document.addEventListener('click',()=>this.hideCtx());
+            if(document.getElementById('voiceGrid')) this.loadProfiles();
+            this.loadXttsStatus();
+            if(document.getElementById('trialStatusCard')){
+                this.loadTrialStatus();
+                this._trialInterval = setInterval(()=>this.loadTrialStatus(), 30000);
+            }
+            this.updateScriptMeta();
+        }
+
+        async loadXttsStatus(){
+            const badge=document.getElementById('xttsStatusBadge');
+            const txt=document.getElementById('xttsStatusText');
+            if(!badge || !txt) return;
+            try{
+                const r=await fetch('/api/xtts/status', {cache:'no-store'});
+                const d=await r.json();
+                const state=(d?.state||'offline').toLowerCase();
+                badge.classList.remove('ready','cold','offline');
+                badge.classList.add(state==='ready'?'ready':(state==='cold'?'cold':'offline'));
+                if(state==='ready'){
+                    txt.textContent='Serveur clonage: en ligne';
+                    badge.title='Serveur prêt.';
+                }else if(state==='cold'){
+                    txt.textContent='Serveur clonage: en veille';
+                    badge.title='Première génération potentiellement plus lente.';
+                    if(this.xttsStatusNotifiedState!=='cold'){
+                        showToast('Clonage','Serveur en veille: la première génération peut prendre un peu plus de temps.','warning');
+                        this.xttsStatusNotifiedState='cold';
+                    }
+                }else{
+                    txt.textContent='Serveur clonage: hors ligne';
+                    badge.title='Service temporairement indisponible.';
+                    if(this.xttsStatusNotifiedState!=='offline'){
+                        showToast('Clonage','Serveur momentanément indisponible. Réessayez dans quelques instants.','warning');
+                        this.xttsStatusNotifiedState='offline';
+                    }
+                }
+                if(state==='ready') this.xttsStatusNotifiedState='ready';
+            }catch(_e){
+                badge.classList.remove('ready','cold');
+                badge.classList.add('offline');
+                txt.textContent='Serveur clonage: hors ligne';
+                badge.title='Impossible de vérifier le serveur.';
+            }
+        }
+
+        async loadTrialStatus(){
+            try{
+                const r = await fetch('/api/trial/status');
+                const d = await r.json();
+                if(!d?.success || !d?.is_trial){this.renderTrialStatus(null);return;}
+                this.renderTrialStatus(d);
+            }catch(_e){this.renderTrialStatus(null);}
+        }
+        renderTrialStatus(d){
+            const card = document.getElementById('trialStatusCard');
+            const main = document.getElementById('trialRemainingMain');
+            const sub = document.getElementById('trialRemainingSub');
+            if(!card || !main || !sub) return;
+            if(!d){card.classList.add('dn');return;}
+            card.classList.remove('dn');
+            const sec = Math.max(0, Number(d.remaining_seconds||0));
+            const min = Math.floor(sec/60);
+            const secPart = String(sec%60).padStart(2,'0');
+            const genLeft = Number(d.remaining_generations||0);
+            const phr = d.remaining_phrases||{};
+            main.textContent = d.active ? `${min}m ${secPart}s restants` : 'Essai terminé';
+            sub.textContent = `Générations: ${genLeft} · Phrases ≈ C:${phr.courtes||0} M:${phr.moyennes||0} L:${phr.longues||0}`;
+        }
+
+        /* PROFILES */
+        async loadProfiles(){
+            try{const r=await fetch('/api/profiles');const d=await r.json();this.profiles=d.profiles||[];this.renderGrid();const b=document.getElementById('profileBadge');if(b)b.textContent=this.profiles.length;}
+            catch(e){console.warn('profiles:',e);}
+            refreshSecureProfileOptions();
+        }
+        renderGrid(){
+            const grid=document.getElementById('voiceGrid');if(!grid)return;
+            if(!this.profiles.length){
+                grid.innerHTML=`<div class="empty-state"><div class="empty-icon"><i class="bi bi-person-bounding-box"></i></div><div class="empty-title">Aucune empreinte vocale</div><div class="empty-sub">Créez votre premier clone moteur vocal IA pour démarrer.</div></div>`;
+                return;
+            }
+            grid.innerHTML=this.profiles.map(p=>{
+                const tags=p.tags?p.tags.split(',').filter(Boolean):[];
+                return `<div class="voice-card" oncontextmenu="app.openCtx(event,'${p.id}')">
+                    <div class="vc-top">
+                        <div class="vc-avatar">${(p.name||'?')[0].toUpperCase()}</div>
+                        <div class="vc-preview" onclick="event.stopPropagation();app.togglePreview('${p.audio_url||''}','${p.id}')"><i class="bi bi-play-fill" id="prev-${p.id}"></i></div>
+                    </div>
+                    <div class="vc-name">${p.name}</div>
+                    <div class="vc-id">ID: ${p.id.substring(0,14)}...</div>
+                    <div class="vc-tags">
+                        <span class="vc-tag vc-tag-lang">${(p.language||'FR').toUpperCase()}</span>
+                        ${tags.slice(0,3).map(t=>`<span class="vc-tag vc-tag-attr">${t.trim()}</span>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        /* UPLOAD */
+        async uploadFile(file,opts={}){
+            this.fileId=null;
+            showToast('Upload','Transfert en cours...','info');
+            const fd=new FormData();fd.append('file',file);
+            try{
+                const r=await fetch('/api/upload-reference',{method:'POST',body:fd});
+                const d=await r.json();
+                if(!r.ok)throw new Error(d.error||'Upload échoué');
+                this.fileId=d.file_id;
+                let durationSec=Number(opts.durationSec||0);
+                if(!durationSec){
+                    durationSec=await this.detectAudioDuration(file);
+                }
+                this.showFileLoaded(file.name,durationSec,opts.source||'file');
+                showToast('Upload','Fichier prêt pour le clonage.','success');
+            }catch(e){showToast('Erreur',e.message,'error');}
+        }
+        async detectAudioDuration(file){
+            try{
+                const objectUrl=URL.createObjectURL(file);
+                const audio=new Audio();
+                const duration=await new Promise(resolve=>{
+                    const cleanup=(val)=>{try{URL.revokeObjectURL(objectUrl);}catch(_e){} resolve(val);};
+                    audio.preload='metadata';
+                    audio.onloadedmetadata=()=>cleanup(Number(audio.duration||0));
+                    audio.onerror=()=>cleanup(0);
+                    audio.src=objectUrl;
+                });
+                if(!Number.isFinite(duration)) return 0;
+                return Math.max(0,Math.round(duration));
+            }catch(_e){return 0;}
+        }
+        updateDurationUi(durationSec){
+            const dur=Math.max(0,Math.round(Number(durationSec||0)));
+            this.detectedDurationSec=dur;
+            document.getElementById('durVal').textContent=dur+'s';
+            document.getElementById('durFill').style.width=Math.min((dur/90)*100,100)+'%';
+            document.getElementById('durSection').classList.add('visible');
+            document.getElementById('mark10').classList.toggle('reached',dur>=10);
+            document.getElementById('mark30').classList.toggle('reached',dur>=30);
+            document.getElementById('mark90').classList.toggle('reached',dur>=90);
+        }
+        showFileLoaded(name,durationSec=0,source='file'){
+            document.getElementById('fileName').textContent=name;
+            document.getElementById('fileLoaded').classList.add('visible');
+            this.updateDurationUi(durationSec);
+            const wRow=document.getElementById('whisperRow');wRow.classList.add('visible');
+            const btn=document.getElementById('whisperBtn');
+            btn.classList.remove('done');btn.disabled=false;
+            document.getElementById('whisperLabel').textContent='Analyser & Transcrire';
+            document.getElementById('whisperIcon').className='bi bi-magic';
+            this.updateScriptMeta();
+        }
+        getTargetDurationSec(){
+            const el=document.getElementById('scriptDuration');
+            const val=(el?.value||'30').trim();
+            if(val!=='auto'){
+                const n=parseInt(val,10);
+                return Number.isFinite(n)?Math.max(10,Math.min(90,n)):30;
+            }
+            const liveMic = this.isMicRec ? this.micSec : 0;
+            const auto = liveMic || this.detectedDurationSec || 30;
+            return Math.max(10,Math.min(90,Math.round(auto)));
+        }
+        estimateWordTarget(sec){
+            // 2.2 mots/s ≈ débit naturel en lecture.
+            return Math.max(25,Math.min(420,Math.round(sec*2.2)));
+        }
+        getScriptTheme(){
+            const el=document.getElementById('scriptTheme');
+            return (el?.value||'gaming').trim();
+        }
+        buildScriptByDuration(sec,theme='gaming'){
+            const targetWords=this.estimateWordTarget(sec);
+            const pools={
+                gaming:[
+                    "Squad, check micro, je suis prêt pour la partie classée et je communique position, timing et ressources en temps réel.",
+                    "Je garde un ton clair et rapide, sans crier, pour que les appels d'équipe restent précis pendant les combats.",
+                    "Contact à gauche, je couvre l'entrée, on push à trois dans cinq secondes, puis on rotate sur l'objectif central.",
+                    "Si vous m'entendez correctement, cela valide mon setup audio pour le jeu compétitif et le stream.",
+                    "Ce test inclut des mots courts, des nombres et des accents pour améliorer la fidélité du clone vocal.",
+                    "Top départ dans dix secondes, on sécurise la zone puis on enchaîne immédiatement sur le point suivant.",
+                    "Je donne des informations brèves et nettes pour maintenir une communication utile en pleine action.",
+                    "On garde le focus, on synchronise les déplacements et on annonce chaque contact sans panique."
+                ],
+                narration:[
+                    "Dans la lumière du matin, la ville s'éveille lentement, et chaque rue raconte une histoire différente.",
+                    "Je pose la voix, j'articule chaque mot, et je laisse respirer les silences pour un rendu plus naturel.",
+                    "Le narrateur avance avec calme, décrit les détails, puis accentue l'émotion au moment clé du récit.",
+                    "Cette prise sert à capturer un timbre stable, une diction propre et une intonation nuancée.",
+                    "Je conclus ce passage avec une cadence douce, régulière et expressive.",
+                    "Au loin, un vent léger traverse les arbres et transforme le silence en promesse d'aventure.",
+                    "Chaque phrase s'installe avec précision pour construire une ambiance claire et immersive.",
+                    "La narration progresse en douceur, entre observation attentive et émotion contenue."
+                ],
+                podcast:[
+                    "Bienvenue dans cet épisode, aujourd'hui on parle d'audio, de création de contenu et de workflow efficace.",
+                    "Je vais structurer les idées en trois points simples: préparation, enregistrement et postproduction.",
+                    "L'objectif est d'obtenir une voix crédible, chaleureuse et constante du début à la fin.",
+                    "On garde un débit naturel, on évite les tics de langage, et on articule clairement les mots techniques.",
+                    "Merci d'avoir écouté ce test, on se retrouve très vite pour la suite.",
+                    "Dans cette partie, je partage des méthodes concrètes pour améliorer la clarté et le rythme à l'antenne.",
+                    "Un bon épisode repose sur une voix stable, une structure claire et des transitions fluides.",
+                    "On termine avec un résumé rapide des points clés pour ancrer les informations essentielles."
+                ],
+                pro:[
+                    "Bonjour, je vous présente un court point d'avancement sur le projet et les prochaines étapes opérationnelles.",
+                    "Nous validons aujourd'hui les livrables prioritaires, le calendrier, et les risques à surveiller.",
+                    "Je maintiens un ton professionnel, clair et posé, afin de garantir une compréhension immédiate.",
+                    "Ce test vocal couvre les termes métiers, les chiffres, et la précision de la prononciation.",
+                    "Merci pour votre attention, je reste disponible pour toute question complémentaire.",
+                    "Le planning de déploiement reste inchangé, avec un contrôle qualité renforcé sur les points critiques.",
+                    "Nous consolidons les indicateurs de performance afin de fiabiliser les décisions de pilotage.",
+                    "Cette synthèse vise une communication concise, structurée et directement exploitable."
+                ]
+            };
+            const pool=pools[theme]||pools.gaming;
+            const out=[];let words=0;
+            const startIndex=Math.floor(Math.random()*pool.length);
+            let i=0;
+            while(words<targetWords){
+                const s=pool[(startIndex+i)%pool.length];
+                out.push(s);
+                words += s.trim().split(/\s+/).length;
+                i++;
+            }
+            const raw=out.join(' ');
+            const arr=raw.split(/\s+/);
+            const trimTarget=Math.max(20,targetWords);
+            return arr.slice(0,trimTarget).join(' ') + '.';
+        }
+        updateScriptMeta(){
+            const sec=this.getTargetDurationSec();
+            const words=this.estimateWordTarget(sec);
+            const mode=((document.getElementById('scriptDuration')?.value||'30')==='auto')?'auto':'fixe';
+            const theme=this.getScriptTheme();
+            const themeLabel={gaming:'Gaming',narration:'Narration',podcast:'Podcast',pro:'Pro'}[theme]||'Gaming';
+            const meta=document.getElementById('scriptMeta');
+            if(meta) meta.textContent=`Durée cible: ${sec}s (${mode}) · ~${words} mots · Thème: ${themeLabel}`;
+        }
+        generateScript(){
+            const sec=this.getTargetDurationSec();
+            const text=this.buildScriptByDuration(sec,this.getScriptTheme());
+            const ta=document.getElementById('generatedScript');
+            if(ta) ta.value=text;
+            this.updateScriptMeta();
+            showToast('Script',`Texte généré pour ~${sec}s.`,'success');
+        }
+        copyGeneratedScript(){
+            const ta=document.getElementById('generatedScript');
+            const value=(ta?.value||'').trim();
+            if(!value){showToast('Script','Générez un texte avant de copier.','warning');return;}
+            navigator.clipboard.writeText(value).then(
+                ()=>showToast('Script','Texte copié dans le presse-papier.','success'),
+                ()=>showToast('Script','Copie impossible.','error')
+            );
+        }
+
+        /* WHISPER — BUG FIX */
+        async runWhisper(){
+            if(!this.fileId){showToast('Whisper','Aucun fichier chargé.','warning');return;}
+            const btn=document.getElementById('whisperBtn'),lbl=document.getElementById('whisperLabel'),ico=document.getElementById('whisperIcon');
+            btn.disabled=true;lbl.textContent='Analyse en cours...';ico.className='bi bi-arrow-repeat';
+            try{
+                const model=document.getElementById('whisperModel').value;
+                const r=await fetch(`/api/transcribe/${this.fileId}`,{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({model})
+                });
+                // FIX : parse body UNE SEULE fois avant de vérifier r.ok
+                let data;
+                try{data=await r.json();}
+                catch(parseErr){throw new Error(`Réponse invalide du serveur (HTTP ${r.status})`);}
+                if(!r.ok)throw new Error(data?.error||data?.message||`Erreur serveur HTTP ${r.status}`);
+                const text=data.text||data.transcript||'';
+                if(!text)throw new Error('Transcription vide — vérifiez le fichier audio.');
+                document.getElementById('referenceText').value=text;
+                lbl.textContent='Analyse terminée ✓';ico.className='bi bi-check-circle-fill';btn.classList.add('done');
+                showToast('Whisper','Texte de référence extrait avec succès.','success');
+            }catch(e){
+                showToast('Whisper',e.message,'error');
+                lbl.textContent='Réessayer';ico.className='bi bi-magic';btn.classList.remove('done');
+            }finally{btn.disabled=false;}
+        }
+
+        /* MIC */
+        async toggleMic(){if(this.isMicRec){this.stopMic();return;}
+            try{
+                const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+                this.mediaRecorder=new MediaRecorder(stream);this.micChunks=[];
+                this.mediaRecorder.ondataavailable=e=>{if(e.data.size>0)this.micChunks.push(e.data);};
+                this.mediaRecorder.onstop=()=>{
+                    const blob=new Blob(this.micChunks,{type:'audio/wav'});
+                    this.uploadFile(new File([blob],'mic_capture.wav',{type:'audio/wav'}),{durationSec:this.micSec,source:'mic'});
+                    document.getElementById('micTimer').classList.remove('active');clearInterval(this.micInterval);
+                };
+                this.mediaRecorder.start();this.isMicRec=true;
+                document.getElementById('micLabel').textContent='Stop';
+                document.getElementById('micIcon').className='bi bi-stop-fill';
+                document.getElementById('micBtn').classList.add('recording');
+                document.getElementById('micTimer').classList.add('active');
+                this.micSec=0;
+                this.micInterval=setInterval(()=>{
+                    this.micSec++;
+                    const m=String(Math.floor(this.micSec/60)).padStart(2,'0'),s=String(this.micSec%60).padStart(2,'0');
+                    document.getElementById('micTimer').textContent=`⏺ ${m}:${s} — Capture en cours`;
+                    if((document.getElementById('scriptDuration')?.value||'')==='auto'){this.updateScriptMeta();}
+                },1000);
+            }catch(e){showToast('Micro','Accès refusé.','error');}
+        }
+        stopMic(){
+            if(this.mediaRecorder)this.mediaRecorder.stop();
+            this.isMicRec=false;
+            document.getElementById('micLabel').textContent='Microphone';
+            document.getElementById('micIcon').className='bi bi-mic-fill';
+            document.getElementById('micBtn').classList.remove('recording');
+        }
+
+        /* SAVE PROFILE */
+        async saveProfile(){
+            const name=document.getElementById('profileName').value.trim();
+            const refText=document.getElementById('referenceText').value.trim();
+            const tos=document.getElementById('tosCheck').checked;
+            if(!name){showToast('Validation','Nom de l\'empreinte requis.','warning');return;}
+            if(!refText){showToast('Validation','La transcription Whisper est obligatoire avant de sauvegarder.','warning');return;}
+            if(!tos){showToast('Validation','Acceptez les conditions d\'utilisation.','warning');return;}
+            const btn=document.getElementById('btnSave');
+            btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Enregistrement...';
+            const payload={file_id:this.fileId,name,reference_text:refText,description:document.getElementById('profileDesc').value,tags:document.getElementById('profileTags').value,visibility:document.getElementById('profileVisibility').value};
+            try{
+                const r=await fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+                const d=await r.json();
+                if(d.success){showToast('Succès',`Clone "${name}" enregistré.`,'success');bootstrap.Modal.getInstance(document.getElementById('wizModal')).hide();this.loadProfiles();}
+                else throw new Error(d.error||'Erreur inconnue');
+            }catch(e){showToast('Erreur',e.message,'error');}
+            finally{btn.disabled=false;btn.innerHTML='<i class="bi bi-fingerprint me-1"></i> Enregistrer le clone';}
+        }
+
+        /* CONTEXT MENU */
+        openCtx(e,id){e.preventDefault();e.stopPropagation();this.ctxId=id;const m=document.getElementById('ctxMenu');m.style.display='block';let x=e.pageX,y=e.pageY;if(x+210>window.innerWidth)x-=200;if(y+140>window.innerHeight)y-=130;m.style.left=x+'px';m.style.top=y+'px';}
+        hideCtx(){const m=document.getElementById('ctxMenu');if(m)m.style.display='none';}
+        copyId(){if(this.ctxId){navigator.clipboard.writeText(this.ctxId);showToast('Copié','ID dans le presse-papier.','success');}}
+        previewCtx(){const p=this.profiles.find(x=>x.id===this.ctxId);if(p)this.togglePreview(p.audio_url||'',p.id);}
+        async deleteVoice(){
+            if(!this.ctxId)return;if(!confirm('Révoquer définitivement cette empreinte ?'))return;
+            try{const r=await fetch(`/api/voices/delete/${this.ctxId}`,{method:'DELETE'});const d=await r.json();if(d.success){showToast('Révoqué','Empreinte supprimée.','success');this.loadProfiles();}else throw new Error(d.error);}
+            catch(e){showToast('Erreur','Suppression échouée.','error');}
+        }
+
+        /* PREVIEW AUDIO */
+        togglePreview(url,id){
+            if(!url){showToast('Audio','Aucun fichier audio disponible.','warning');return;}
+            if(this.previewAudio&&this.currentPreviewId===id){this.previewAudio.pause();const i=document.getElementById(`prev-${id}`);if(i){i.className='bi bi-play-fill';i.style.color='';}this.currentPreviewId=null;return;}
+            if(this.previewAudio){this.previewAudio.pause();const oi=document.getElementById(`prev-${this.currentPreviewId}`);if(oi){oi.className='bi bi-play-fill';oi.style.color='';}}
+            this.previewAudio=new Audio(url);this.currentPreviewId=id;
+            const icon=document.getElementById(`prev-${id}`);if(icon){icon.className='bi bi-stop-fill';icon.style.color='var(--cyan)';}
+            this.previewAudio.play().catch(()=>showToast('Audio','Lecture impossible.','error'));
+            this.previewAudio.onended=()=>{const i=document.getElementById(`prev-${id}`);if(i){i.className='bi bi-play-fill';i.style.color='';}this.currentPreviewId=null;};
+        }
+
+        /* RESET WIZARD */
+        resetWizard(){
+            this.fileId=null;
+            document.getElementById('referenceText').value='';
+            document.getElementById('profileName').value='';
+            document.getElementById('profileDesc').value='';
+            document.getElementById('profileTags').value='';
+            document.getElementById('profileVisibility').value='public';
+            document.getElementById('durSection').classList.remove('visible');
+            document.getElementById('fileLoaded').classList.remove('visible');
+            document.getElementById('whisperRow').classList.remove('visible');
+            document.getElementById('tosCheck').checked=false;
+            document.querySelectorAll('.pill.on').forEach(p=>p.classList.remove('on'));
+            document.querySelectorAll('.vis-opt').forEach((o,i)=>o.classList.toggle('on',i===0));
+            document.getElementById('micLabel').textContent='Microphone';
+            document.getElementById('micIcon').className='bi bi-mic-fill';
+            document.getElementById('micBtn').classList.remove('recording');
+            document.getElementById('micTimer').classList.remove('active');
+            const btn=document.getElementById('whisperBtn');btn.classList.remove('done');btn.disabled=false;
+            document.getElementById('whisperLabel').textContent='Analyser & Transcrire';
+            document.getElementById('whisperIcon').className='bi bi-magic';
+            document.getElementById('audioFile').value='';
+            this.detectedDurationSec=0;
+            const scriptTa=document.getElementById('generatedScript');
+            if(scriptTa) scriptTa.value='';
+            const scriptDur=document.getElementById('scriptDuration');
+            if(scriptDur) scriptDur.value='30';
+            const scriptTheme=document.getElementById('scriptTheme');
+            if(scriptTheme) scriptTheme.value='gaming';
+            this.updateScriptMeta();
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Init uniquement les handlers correspondant à la vue rendue par Jinja.
+        const hasDashboard = !!document.getElementById('voiceGrid');
+        const hasAuthFlow = !!document.getElementById('screen-license');
+        if (hasDashboard || hasAuthFlow) window.app = new KommzApp();
+        applySecureUnlockUi();
+    });
+    </script>
+</body>
+</html>

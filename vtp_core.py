@@ -202,11 +202,11 @@ DEFAULT_KOMMZ_WHISPER_MODEL = (
     str(os.environ.get("KOMMZ_DEFAULT_WHISPER_MODEL", "small") or "small").strip().lower()
     or "small"
 )
+# V5.4: GPT-SoVITS Modal URL (Claude Opus 5) — auto-renseigné dans gpt_api_url
 DEFAULT_KOMMZ_GPT_API_URL = os.environ.get(
     "KOMMZ_DEFAULT_GPT_API_URL",
-    "https://kommz-innovations--kommz-voice-gptsovits-tts.modal.run",
-).strip().rstrip("/")
-
+    "",
+).strip()
 if not CLOUD_FEATURES_ENABLED:
     DEFAULT_KOMMZ_CLONE_URL = ""
     DEFAULT_KOMMZ_SYNTHESIS_URL = ""
@@ -281,6 +281,9 @@ def _normalize_voice_library_entry(raw: dict) -> dict:
         or ""
     ).strip()
     name = str(item.get("name") or voice_id or "Voix sans nom").strip()
+    engine = str(item.get("engine") or "KOMMZ_VOICE").strip().upper()
+    if engine not in {"KOMMZ_VOICE", "FISH_AUDIO"}:
+        engine = "KOMMZ_VOICE"
     lang = str(item.get("lang") or "").strip().lower()
     tags = item.get("tags")
     if isinstance(tags, str):
@@ -292,6 +295,7 @@ def _normalize_voice_library_entry(raw: dict) -> dict:
     return {
         "name": _repair_display_text(name),
         "voice_id": voice_id,
+        "engine": engine,
         "lang": lang,
         "tags": tags[:8],
         "updated_at": str(item.get("updated_at") or _utc_now_iso()),
@@ -307,6 +311,7 @@ def _get_voice_library() -> list:
     for raw in lib:
         item = _normalize_voice_library_entry(raw)
         vid = item.get("voice_id", "")
+        identity = (item.get("engine", "KOMMZ_VOICE"), vid)
         if not vid or identity in seen:
             continue
         seen.add(identity)
@@ -314,14 +319,6 @@ def _get_voice_library() -> list:
     AUDIO_CONFIG["voice_library"] = normalized
     return normalized
 
-
-def _set_voice_gender(gender: str, persist: bool = False):
-    g = str(gender or "Female").strip().capitalize()
-    if g not in {"Female", "Male"}:
-        g = "Female"
-    AUDIO_CONFIG["voice_gender"] = g
-    if persist:
-        save_settings()
 
 def _set_voice_active_id(voice_id: str, persist: bool = False):
     vid = str(voice_id or "").strip()
@@ -675,9 +672,12 @@ def stealth_print(*args, **kwargs):
     if "_set_module_runtime" in globals():
         try:
             if AUDIO_CONFIG.get("stealth_mode_active", False):
-                _set_module_runtime("stealth", "Masqué", "Console réduite, logs non critiques cachés")
+                _set_module_runtime("stealth", "Masqué", "Console réduite, logs non critiques cachés",
+                        state_key="state_hidden", detail_key="stealth_console_hidden")
             else:
-                _set_module_runtime("stealth", "Console", "Logs visibles dans la console")
+                _set_module_runtime("stealth", "Console", "Logs visibles dans la console",
+                                    state_key="state_inactive",
+                                    detail_key="stealth_off")
         except Exception:
             pass
 
@@ -900,6 +900,36 @@ except Exception:
 # KOMMZ_SETTINGS_FILE (fallback: settings.json).
 # Mémorise les traductions pour une réponse instantanée
 SHADOW_CACHE = collections.OrderedDict()
+
+# Traduction spéculative : on traduit les partiels Deepgram pour préchauffer
+# SHADOW_CACHE. Si le texte final correspond, la traduction est déjà prête.
+# Mesuré plutôt que supposé : le taux de réussite dépend de la stabilité des
+# partiels, qui n'a jamais été observée en session réelle.
+_SPECULATIVE_STATE = {
+    "last_fire_ts": 0.0,
+    "last_text": "",
+    "inflight": 0,
+    "fired": 0,
+    "hits": 0,
+    "misses": 0,
+    # Diagnostic : un echec de 2 caracteres et un echec total se comptent
+    # aujourd'hui de la meme facon. Sans distinguer les deux, impossible de
+    # savoir si la speculation rate de peu ou si elle est structurellement
+    # inadaptee a ce flux.
+    "near_misses": 0,
+    "last_miss_ratio": 0.0,
+    "last_miss_final": "",
+    "last_miss_closest": "",
+}
+# Au-dessus de ce seuil, le partiel etait presque le texte final.
+_SPECULATIVE_NEAR_MISS_RATIO = 0.85
+_SPECULATIVE_LOCK = threading.Lock()
+
+# Cache dédié, indexé sur une forme normalisée. Séparé de SHADOW_CACHE parce
+# que celui-ci est consulté partout avec le texte exact : y mettre une clé
+# normalisée ferait renvoyer la même traduction pour deux textes différents.
+_SPECULATIVE_CACHE = collections.OrderedDict()
+_SPECULATIVE_CACHE_MAX = 60
 SHADOW_AUDIO_CACHE = collections.OrderedDict()
 SHADOW_CACHE_MAX_ITEMS = 200
 SHADOW_AUDIO_CACHE_MAX_ITEMS = 48
@@ -1012,7 +1042,8 @@ def apply_privacy_sentinel(text):
             
     if censored:
         stealth_print(f"🛡️ PRIVACY : '{original_text}' -> BLOQUÉ")
-        _set_module_runtime("privacy", "Blocage", "Donnée sensible détectée et censurée")
+        _set_module_runtime("privacy", "Blocage", "Donnée sensible détectée et censurée",
+                        state_key="state_blocking", detail_key="privacy_blocked")
     else:
         _set_module_runtime("privacy", "Actif", "Aucune donnée sensible détectée")
         
@@ -1373,9 +1404,11 @@ def apply_esport_profile(force_log=False):
     wanted = "high" if enabled else "above_normal"
     ok = _set_process_priority(wanted)
     if enabled:
-        _set_module_runtime("esport", "Performance", "Priorité CPU/process élevée")
+        _set_module_runtime("esport", "Performance", "Priorité CPU/process élevée",
+                        state_key="state_performance", detail_key="esport_high")
     else:
-        _set_module_runtime("esport", "Normal+", "Priorité process standard améliorée")
+        _set_module_runtime("esport", "Normal+", "Priorité process standard améliorée",
+                        state_key="state_normal_plus", detail_key="esport_normal")
     if ok and (force_log or enabled):
         if enabled:
             stealth_print("🏁 Profil e-sport actif : priorité CPU élevée.")
@@ -1479,7 +1512,8 @@ def get_teamsync_playback_gain():
     age = time.time() - float(TEAMSYNC_RUNTIME.get("updated_at", 0.0) or 0.0)
     if age > 3.0:
         TEAMSYNC_RUNTIME["last_gain"] = 1.0
-        _set_module_runtime("teamsync", "Veille", "Aucun niveau jeu/chat récent")
+        _set_module_runtime("teamsync", "Veille", "Aucun niveau jeu/chat récent",
+                        state_key="state_idle", detail_key="teamsync_idle")
         return 1.0
     level = float(TEAMSYNC_RUNTIME.get("level", 0.0) or 0.0)
     gain = 1.0
@@ -1824,7 +1858,7 @@ def _voice_focus_v3_calibrate_step(x, sr, peak, rms):
     st["room_decay_ema"] = st["room_decay_ema"] * 0.95 + room_rms * 0.05
     if elapsed >= st["calibration_duration_s"]:
         st["calibrated"] = True
-        st["vad_threshold_adaptive"] = max(0.008, min(0.06, st["vad_noise_floor_ema"] * 3.5))
+        st["vad_threshold_adaptive"] = max(0.008, min(2.0, st["vad_noise_floor_ema"] * 3.5))
         st["voice_target_rms"] = max(0.03, min(0.15, st["vad_voice_peak_ema"] * 0.45))
         st["sibilance_threshold"] = st["noise_floor_high"] * 1.8
         st["click_threshold"] = rms * 6.0
@@ -1836,7 +1870,7 @@ def _voice_focus_v3_calibrate_step(x, sr, peak, rms):
             if spreads:
                 st["voiceprint_spread_ema"] = float(np.mean(spreads))
         st["voiceprint_initialized"] = True
-        AUDIO_CONFIG["vad_threshold"] = round(st["vad_threshold_adaptive"], 6)
+        # Don't overwrite user's manual threshold from slider
         AUDIO_CONFIG["voice_focus_v3_calibrated"] = True
         try:
             stealth_print(f"✅ Voice Focus V3 calibré: seuil VAD={st['vad_threshold_adaptive']:.4f}, target_rms={st['voice_target_rms']:.3f}")
@@ -2056,8 +2090,12 @@ def _vad_v2_is_speech(mono_float32: "np.ndarray", sample_rate: int) -> bool:
             st["backend"] = "rms"
 
     # RMS-based VAD with adaptive threshold (Silero-style behavior)
-    v3_thresh = float(_voice_focus_v3_state.get("vad_threshold_adaptive", threshold))
-    effective_thresh = v3_thresh if _voice_focus_v3_state.get("calibrated", False) else threshold
+    # If user manually set threshold via slider (different from default), use it
+    _manual = AUDIO_CONFIG.get("vad_threshold_manual", False)
+    effective_thresh = threshold if _manual else (
+        float(_voice_focus_v3_state.get("vad_threshold_adaptive", threshold))
+        if _voice_focus_v3_state.get("calibrated", False) else threshold
+    )
     speech = rms > effective_thresh
     # EMA smoothing
     st["speech_ratio_ema"] = st["speech_ratio_ema"] * 0.8 + (1.0 if speech else 0.0) * 0.2
@@ -2091,8 +2129,9 @@ VOICES_LIBRARY = {
 
 DEFAULT_VOICE_ID = ""
 VTP_CORE_PORT = 8770
-UPDATE_URL = "https://pastebin.com/raw/dummy" 
-APP_BUILD_VERSION = "5.3"
+# UPDATE_URL a ete retire : jamais lu. Le point d'entree reel est
+# UPDATE_CHECK_URL, configurable par variable d'environnement.
+APP_BUILD_VERSION = "5.3.1"
 
 def _load_current_version(default: str = APP_BUILD_VERSION) -> str:
     # In packaged builds, rely on the embedded build version instead of an
@@ -2118,6 +2157,13 @@ def _load_current_version(default: str = APP_BUILD_VERSION) -> str:
 
 CURRENT_VERSION = _load_current_version()
 UPDATE_CHANNEL = os.environ.get("KOMMZ_UPDATE_CHANNEL", "stable").strip().lower() or "stable"
+
+# Langue d'affichage courante. Le client la pousse ici pour que les
+# messages construits cote serveur (resume de mise a jour) suivent.
+CURRENT_UI_LANG = "fr"
+# Service de mise a jour Kommz Voice. Doit avoir une valeur par defaut :
+# aucun utilisateur ne definira cette variable d'environnement, et sans
+# elle la verification s'arretait sur "Non configure" pour tout le monde.
 UPDATE_CHECK_URL = os.environ.get(
     "KOMMZ_UPDATE_CHECK_URL",
     ""
@@ -2150,6 +2196,14 @@ PIPELINE_RUNTIME_STATE = {
     "hybrid_detail": "Aucune génération Hybrid récente",
     "tts_engine": "En attente",
     "tts_route": "Aucune synthèse récente",
+    # Codes neutres : le client choisit la langue d'affichage.
+    # Les libelles ci-dessus restent la pour les clients plus anciens.
+    "stt_engine_key": "pending",
+    "stt_detail_key": "no_recent_transcription",
+    "hybrid_engine_key": "pending",
+    "hybrid_detail_key": "no_recent_hybrid",
+    "tts_engine_key": "pending",
+    "tts_route_key": "no_recent_synthesis",
     "updated_at": 0.0,
 }
 
@@ -2160,6 +2214,7 @@ LATENCY_RUNTIME_STATE = {
     "total_ms": None,
     "stage": "idle",
     "detail": "Aucune activité récente",
+    "detail_key": "no_recent_activity",
     "updated_at": 0.0,
     # V5.3: Percentiles p50/p95/p99
     "stt_p50": None, "stt_p95": None, "stt_p99": None,
@@ -2285,7 +2340,8 @@ def _set_pipeline_runtime(**kwargs):
     PIPELINE_RUNTIME_STATE["updated_at"] = time.time()
 
 
-def _set_module_runtime(name, state=None, detail=None):
+def _set_module_runtime(name, state=None, detail=None,
+                       state_key=None, detail_key=None):
     entry = MODULE_RUNTIME_STATE.setdefault(
         name,
         {"state": "Inconnu", "detail": "", "updated_at": 0.0},
@@ -2294,6 +2350,12 @@ def _set_module_runtime(name, state=None, detail=None):
         entry["state"] = _short_runtime_text(state, 48)
     if detail is not None:
         entry["detail"] = _short_runtime_text(detail, 180)
+    # Codes neutres : le client les traduit. Les champs texte restent
+    # remplis pour ne rien casser chez un client plus ancien.
+    if state_key is not None:
+        entry["state_key"] = state_key
+    if detail_key is not None:
+        entry["detail_key"] = detail_key
     entry["updated_at"] = time.time()
     MODULE_RUNTIME_STATE["updated_at"] = entry["updated_at"]
 
@@ -2489,6 +2551,152 @@ def _reset_latency_runtime(detail: str = "Traitement en attente"):
         LATENCY_RUNTIME_STATE["updated_at"] = time.time()
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────
+# JOURNAL D'USAGE — minutes et moteur par session
+#
+# Le cout par utilisateur ne suit pas le volume traduit mais le CHEMIN
+# emprunte : Edge TTS n'a pas de cout marginal, un clone reveille un GPU
+# facture a la seconde. Deux utilisateurs a volume egal peuvent differer
+# d'un ordre de grandeur. On journalise donc le moteur, pas que le volume.
+#
+# Format JSONL : une ligne par phrase, resistant aux arrets brutaux,
+# lisible sans dependance et concatenable entre machines.
+# ─────────────────────────────────────────────────────────────────────
+
+_USAGE_SESSION_ID = None
+_usage_log_lock = threading.Lock()
+
+# Classe de cout par moteur. A ajuster avec les factures reelles.
+USAGE_ENGINE_COST_CLASS = {
+    "edge": "free",           # Edge / Windows : aucun cout marginal
+    "windows": "free",
+    "kommz_voice": "gpu",     # clone XTTS / GPT-SoVITS sur Modal
+    "xtts": "gpu",
+    "gpt_sovits": "gpu",
+    "voice_id": "gpu",
+    "fish": "byok",           # cle API fournie par l'utilisateur
+}
+
+
+def _usage_session_id():
+    """Identifiant de session, cree au premier evenement."""
+    global _USAGE_SESSION_ID
+    if _USAGE_SESSION_ID is None:
+        _USAGE_SESSION_ID = "%x%x" % (int(time.time()), os.getpid() & 0xFFFF)
+    return _USAGE_SESSION_ID
+
+
+def _usage_log_path():
+    """Meme emplacement que les autres traces locales."""
+    try:
+        base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+    except Exception:
+        base = tempfile.gettempdir()
+    target = os.path.join(base, "KommzGamer")
+    try:
+        os.makedirs(target, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(target, "usage_log.jsonl")
+
+
+def log_usage_event(engine, stt_ms=None, tts_ms=None, total_ms=None,
+                    audio_seconds=None, chars=None, target_lang=None,
+                    ok=True):
+    """Enregistre une phrase synthetisee.
+
+    Ne leve jamais : un echec d'ecriture ne doit pas interrompre le
+    pipeline audio.
+    """
+    try:
+        eng = str(engine or "unknown").lower()
+
+        def num(v, nd=1):
+            return round(float(v), nd) if isinstance(v, (int, float)) else None
+
+        row = {
+            "ts": round(time.time(), 3),
+            "session": _usage_session_id(),
+            "engine": eng,
+            "cost_class": USAGE_ENGINE_COST_CLASS.get(eng, "unknown"),
+            "lang": str(target_lang or globals().get("CURRENT_TARGET_LANG") or "")[:8],
+            "stt_ms": num(stt_ms),
+            "tts_ms": num(tts_ms),
+            "total_ms": num(total_ms),
+            "audio_s": num(audio_seconds, 2),
+            "chars": int(chars) if isinstance(chars, (int, float)) else None,
+            "ok": bool(ok),
+        }
+        with _usage_log_lock:
+            with open(_usage_log_path(), "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def usage_rollup(days=30):
+    """Agrege le journal sur une fenetre glissante.
+
+    Renvoie le volume par moteur et par classe de cout, plus le nombre de
+    sessions et de jours actifs : de quoi calculer un cout par utilisateur
+    actif une fois les tarifs fournisseurs connus.
+    """
+    cutoff = time.time() - (days * 86400)
+    by_engine, by_class = {}, {}
+    sessions, days_seen = set(), set()
+    events = 0
+    try:
+        path = _usage_log_path()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    ts = float(r.get("ts") or 0)
+                    if ts < cutoff:
+                        continue
+                    events += 1
+                    sessions.add(r.get("session"))
+                    days_seen.add(time.strftime("%Y-%m-%d", time.localtime(ts)))
+                    keys = ((by_engine, r.get("engine") or "unknown"),
+                            (by_class, r.get("cost_class") or "unknown"))
+                    for bucket, key in keys:
+                        b = bucket.setdefault(key, {"events": 0, "audio_s": 0.0,
+                                                    "tts_ms": 0.0, "chars": 0})
+                        b["events"] += 1
+                        for field, dest in (("audio_s", "audio_s"),
+                                            ("tts_ms", "tts_ms"),
+                                            ("chars", "chars")):
+                            v = r.get(field)
+                            if isinstance(v, (int, float)):
+                                b[dest] += v
+    except Exception:
+        pass
+
+    for bucket in (by_engine, by_class):
+        for b in bucket.values():
+            b["audio_minutes"] = round(b["audio_s"] / 60.0, 2)
+            b["tts_seconds"] = round(b["tts_ms"] / 1000.0, 1)
+            b["audio_s"] = round(b["audio_s"], 1)
+            b["chars"] = int(b["chars"])
+            b.pop("tts_ms", None)
+
+    return {
+        "days": days,
+        "events": events,
+        "sessions": len(sessions),
+        "active_days": len(days_seen),
+        "by_engine": by_engine,
+        "by_cost_class": by_class,
+    }
+
 def _record_latency(stage: str, detail: str = "", stt_ms=None, translate_ms=None, tts_ms=None):
     with _latency_runtime_lock:
         if isinstance(stt_ms, (int, float)):
@@ -2563,6 +2771,38 @@ def _build_hybrid_fast_runtime_payload():
     return payload
 
 
+# Codes d'etat neutres. Le client traduit ; le serveur ne choisit pas la langue.
+MODULE_RUNTIME_KEYS = {
+    "seamless":    ("seamless_ready",   "seamless_off"),
+    "smart":       ("smart_ready",      "smart_off"),
+    "teamsync":    ("teamsync_ready",   "teamsync_off"),
+    "turbo":       ("turbo_ready",      "turbo_off"),
+    "esport":      ("esport_high",      "esport_normal"),
+    "stealth":     ("stealth_ready",    "stealth_off"),
+    "shadow":      ("shadow_ready",     "shadow_off"),
+    "autocontext": ("autocontext_ready","autocontext_off"),
+    "autoupdate":  ("autoupdate_ready", "autoupdate_off"),
+    "tilt":        ("tilt_ready",       "tilt_off"),
+    "stream":      ("stream_ready",     "stream_off"),
+    "macros":      ("macros_ready",     "macros_off"),
+    "polyglot":    ("polyglot_ready",   "polyglot_off"),
+    "privacy":     ("privacy_ready",    "privacy_off"),
+    "marker":      ("marker_ready",     "marker_off"),
+    "hybrid":      ("hybrid_ready",     "hybrid_off"),
+}
+
+
+def _module_runtime_keys(name, enabled):
+    """Retourne (state_key, detail_key) pour un module donne."""
+    on_key, off_key = MODULE_RUNTIME_KEYS.get(name, ("unknown", "unknown"))
+    detail_key = on_key if enabled else off_key
+    if name == "esport":
+        state_key = "state_performance" if enabled else "state_normal_plus"
+    else:
+        state_key = "state_active" if enabled else "state_inactive"
+    return state_key, detail_key
+
+
 def _module_runtime_defaults(name, state=None):
     enabled = bool(state) if state is not None else False
     defaults = {
@@ -2607,7 +2847,9 @@ def _refresh_module_runtime_defaults():
     }
     for module_name, enabled in module_flags.items():
         state_value, detail_value = _module_runtime_defaults(module_name, enabled)
-        _set_module_runtime(module_name, state_value, detail_value)
+        state_key, detail_key = _module_runtime_keys(module_name, enabled)
+        _set_module_runtime(module_name, state_value, detail_value,
+                            state_key=state_key, detail_key=detail_key)
 
 
 _refresh_module_runtime_defaults()
@@ -3107,6 +3349,69 @@ def _maybe_enable_hybrid_fr_default():
     return True
 
 
+KOMMZ_REF_TARGET_SR = int(os.environ.get("KOMMZ_REF_TARGET_SR", "32000"))
+
+
+def _shrink_reference_for_xtts(raw, max_ref_sec, gpt_cond_sec=12):
+    """Reduit la reference audio a ce que le serveur utilisera de toute facon.
+
+    Mesure a l'appui : 5 097 682 octets etaient envoyes a chaque phrase, soit
+    une cinquantaine de secondes de micro en 48 kHz. Or le serveur tronque a
+    XTTS_REF_MAX_SEC secondes et reechantillonne en mono 32 kHz avant tout
+    calcul. Tout ce qui depasse traverse le reseau pour etre jete a l'arrivee.
+
+    On garde une marge de 2 s au-dessus du plus grand des deux besoins
+    (troncature serveur et gpt_cond_len), pour rester correct si ces reglages
+    changent cote serveur.
+
+    Retourne (octets, infos). En cas de doute, l'original est renvoye tel quel :
+    une reference degradee coute plus cher qu'un envoi plus gros.
+    """
+    info = {"in_bytes": len(raw or b""), "out_bytes": len(raw or b""), "changed": False}
+    if not raw:
+        return raw, info
+    try:
+        keep_sec = max(float(max_ref_sec or 10.0), float(gpt_cond_sec or 12.0)) + 2.0
+        keep_sec = max(4.0, min(30.0, keep_sec))
+
+        data, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
+        if data.size == 0 or sr <= 0:
+            return raw, info
+
+        mono = data.mean(axis=1) if data.shape[1] > 1 else data[:, 0]
+
+        max_samples = int(keep_sec * sr)
+        if mono.shape[0] > max_samples:
+            mono = mono[:max_samples]
+
+        target_sr = max(16000, min(48000, KOMMZ_REF_TARGET_SR))
+        if sr != target_sr:
+            try:
+                import soxr as _sx
+                mono = _sx.resample(mono, sr, target_sr, quality="VHQ")
+                sr = target_sr
+            except Exception:
+                pass  # sans soxr on garde la frequence d'origine
+
+        out = io.BytesIO()
+        out.name = "audio.wav"
+        pcm16 = (np.clip(mono, -1.0, 1.0) * 32767.0).astype(np.int16)
+        sf.write(out, pcm16, sr, format="WAV", subtype="PCM_16")
+        shrunk = out.getvalue()
+
+        if shrunk and len(shrunk) < len(raw):
+            info.update(
+                out_bytes=len(shrunk),
+                changed=True,
+                sr=sr,
+                seconds=round(float(pcm16.shape[0]) / float(sr), 2),
+            )
+            return shrunk, info
+    except Exception as exc:
+        info["error"] = f"{type(exc).__name__}: {exc}"
+    return raw, info
+
+
 def _gpt_style_to_xtts_ref_bytes(text: str, fast_mode: bool = False) -> bytes:
     """
     Génère un WAV de style via GPT-SoVITS (api_v2 /tts), à utiliser
@@ -3492,7 +3797,18 @@ def _run_whisper_for_ref(ref_path: str, lang_hint: str = "ja"):
 KOMMZ_XTTS_WARMUP_URL = os.environ.get("KOMMZ_XTTS_WARMUP_URL", "").strip() or _derive_modal_endpoint(DEFAULT_KOMMZ_VOICE_ENDPOINT, "warmup")
 KOMMZ_XTTS_HEALTH_URL = os.environ.get("KOMMZ_XTTS_HEALTH_URL", "").strip() or _derive_modal_endpoint(DEFAULT_KOMMZ_VOICE_ENDPOINT, "health")
 KOMMZ_XTTS_WARMUP_COOLDOWN = int(os.environ.get("KOMMZ_XTTS_WARMUP_COOLDOWN", "90"))
+# Duree apres laquelle Modal eteint le conteneur GPU (scaledown_window cote
+# modal_xtts.py). C'est la seule valeur qui determine si le serveur est encore
+# chaud ; la deduire du cooldown de warmup n'avait aucun rapport.
+KOMMZ_XTTS_SCALEDOWN_WINDOW = int(os.environ.get("KOMMZ_XTTS_SCALEDOWN_WINDOW", "300"))
+# Un warmup qui echoue doit pouvoir etre retente vite, pas attendre 90 s.
+KOMMZ_XTTS_WARMUP_RETRY_AFTER_FAILURE = int(os.environ.get("KOMMZ_XTTS_WARMUP_RETRY_S", "12"))
 _last_xtts_warmup_ts = 0.0
+# Horodatage du dernier warmup REUSSI. Distinct du precedent : jusqu'ici un
+# warmup echoue marquait quand meme le serveur comme chaud, et bloquait la
+# nouvelle tentative pendant 90 s.
+_last_xtts_warmup_ok_ts = 0.0
+_last_xtts_warmup_error = ""
 _last_xtts_activity_ts = 0.0
 _xtts_warmup_lock = threading.Lock()
 _xtts_runtime_cache = {
@@ -3514,21 +3830,43 @@ _hybrid_style_ref_cache = {
 }
 
 
-def prewarm_kommz_xtts(force=False, timeout_connect=3, timeout_read=20):
+def prewarm_kommz_xtts(force=False, timeout_connect=3, timeout_read=45):
+    # 45 s et non 20 : le warmup execute desormais une inference jetable cote
+    # Modal pour absorber la compilation des noyaux CUDA. Sur un conteneur
+    # froid, demarrage + chargement + inference depasse 20 s, et le client
+    # concluait a un echec alors que le rechauffement aboutissait. Ce thread
+    # ne bloque aucun rendu : attendre ne coute rien ici.
     """Réveille le worker XTTS en arrière-plan pour réduire le cold start."""
     global _last_xtts_warmup_ts, _last_xtts_activity_ts
     now = time.time()
-    if not force and (now - _last_xtts_warmup_ts) < KOMMZ_XTTS_WARMUP_COOLDOWN:
+    # Un echec precedent ne doit pas imposer le cooldown complet.
+    effective_cooldown = (
+        KOMMZ_XTTS_WARMUP_COOLDOWN
+        if _last_xtts_warmup_ok_ts >= _last_xtts_warmup_ts
+        else KOMMZ_XTTS_WARMUP_RETRY_AFTER_FAILURE
+    )
+    if not force and (now - _last_xtts_warmup_ts) < effective_cooldown:
         return
 
     def _run():
-        global _last_xtts_warmup_ts
+        global _last_xtts_warmup_ts, _last_xtts_warmup_ok_ts
+        global _last_xtts_warmup_error, _last_xtts_activity_ts
         try:
             with _xtts_warmup_lock:
                 now2 = time.time()
-                if not force and (now2 - _last_xtts_warmup_ts) < KOMMZ_XTTS_WARMUP_COOLDOWN:
+                if not force and (now2 - _last_xtts_warmup_ts) < effective_cooldown:
                     return
                 ok = False
+                last_err = ""
+                # La route de warmup Modal est declaree en POST uniquement.
+                # L'ancien repli GET ne pouvait donc que renvoyer 405, et il
+                # ecrasait au passage l'erreur du POST : le diagnostic affichait
+                # "HTTP 405" alors que la vraie cause etait ailleurs, un delai
+                # depasse par exemple. Repli supprime, erreur du POST conservee.
+                #
+                # On ne se rabat pas non plus sur /health : cote Modal, health
+                # est une fonction CPU distincte qui renvoie un JSON fixe et ne
+                # touche jamais au conteneur GPU. L'appeler ne rechauffe rien.
                 for candidate in _build_kommz_aux_candidates("warmup"):
                     warmup_url = candidate["url"]
                     try:
@@ -3537,21 +3875,35 @@ def prewarm_kommz_xtts(force=False, timeout_connect=3, timeout_read=20):
                             timeout=(timeout_connect, timeout_read),
                         )
                         ok = r.ok
-                    except Exception:
+                        if ok:
+                            _remember_working_kommz_base(candidate.get("base_url", ""))
+                            # La reponse porte load_ms et warm_infer_ms : les
+                            # tracer evite de deviner ou passent les secondes.
+                            try:
+                                body = r.json() or {}
+                                stealth_print(
+                                    "✅ Warmup clonage : "
+                                    f"load_ms={body.get('load_ms')} "
+                                    f"warm_infer_ms={body.get('warm_infer_ms')} "
+                                    f"infer_error={body.get('warm_infer_error') or 'none'}"
+                                )
+                            except Exception:
+                                pass
+                            break
+                        last_err = f"HTTP {r.status_code} (POST) sur {warmup_url}"
+                    except Exception as ex:
                         ok = False
+                        last_err = f"{type(ex).__name__} (POST) sur {warmup_url} : {ex}"
 
-                    if not ok:
-                        try:
-                            r = requests.get(warmup_url, timeout=(timeout_connect, 10))
-                            ok = bool(getattr(r, "ok", False))
-                        except Exception:
-                            ok = False
-
-                    if ok:
-                        _remember_working_kommz_base(candidate.get("base_url", ""))
-                        break
                 _last_xtts_warmup_ts = time.time()
-                _last_xtts_activity_ts = _last_xtts_warmup_ts
+                if ok:
+                    # Seul un succes autorise a dire que le serveur est chaud.
+                    _last_xtts_warmup_ok_ts = _last_xtts_warmup_ts
+                    _last_xtts_warmup_error = ""
+                    _last_xtts_activity_ts = _last_xtts_warmup_ts
+                else:
+                    _last_xtts_warmup_error = last_err or "warmup injoignable"
+                    stealth_print(f"⚠️ Warmup clonage echoue : {_last_xtts_warmup_error}")
         except Exception:
             pass
 
@@ -3570,6 +3922,7 @@ def get_kommz_xtts_runtime_status(force=False, cache_ttl=20):
 
     state = "offline"
     message = "Serveur clonage: hors ligne"
+    message_key = "clone_offline"
     last_err = ""
     try:
         for candidate in _build_kommz_aux_candidates("health"):
@@ -3582,14 +3935,21 @@ def get_kommz_xtts_runtime_status(force=False, cache_ttl=20):
                         continue
                     break
                 _remember_working_kommz_base(candidate.get("base_url", ""))
-                # On considère "cold" si pas d'activité récente côté desktop.
-                idle_for = now - max(_last_xtts_activity_ts, _last_xtts_warmup_ts, 0.0)
-                if idle_for > (KOMMZ_XTTS_WARMUP_COOLDOWN * 1.5):
+                # `health` est une fonction Modal distincte, sans GPU, qui
+                # renvoie un JSON fixe : sa reponse ne dit rien de l'etat du
+                # conteneur qui fait la synthese. Le seul indice exploitable
+                # est la date du dernier warmup REUSSI, comparee a la fenetre
+                # d'extinction de Modal (scaledown_window), pas au cooldown
+                # local qui n'a aucun rapport avec elle.
+                idle_for = now - max(_last_xtts_activity_ts, _last_xtts_warmup_ok_ts, 0.0)
+                if _last_xtts_warmup_ok_ts <= 0.0 or idle_for > KOMMZ_XTTS_SCALEDOWN_WINDOW:
                     state = "cold"
                     message = "Serveur clonage: en veille (première génération plus lente)"
+                    message_key = "clone_cold"
                 else:
                     state = "ready"
                     message = "Serveur clonage: en ligne"
+                    message_key = "clone_ready"
                 break
             except Exception as ex:
                 last_err = str(ex)
@@ -3599,6 +3959,8 @@ def get_kommz_xtts_runtime_status(force=False, cache_ttl=20):
 
     _xtts_runtime_cache["state"] = state
     _xtts_runtime_cache["message"] = message if state != "offline" else "Serveur clonage: hors ligne"
+    # Code neutre : le client choisit la langue.
+    _xtts_runtime_cache["message_key"] = message_key if state != "offline" else "clone_offline"
     _xtts_runtime_cache["checked_at"] = now
     return dict(_xtts_runtime_cache)
 
@@ -3688,15 +4050,23 @@ def get_cloud_endpoints_diag(force=False, cache_ttl=25):
     ok_count = sum(1 for it in items if it.get("ok"))
     total = len(items)
     summary = f"{ok_count}/{total} endpoints joignables"
+    summary_key = "cloud_partial"
     if ok_count == 0:
         summary = "0 endpoint joignable (vérifier URLs Modal / cloud)"
+        summary_key = "cloud_none"
     elif ok_count < total:
         summary = f"{ok_count}/{total} endpoints joignables (fallback probable)"
+        summary_key = "cloud_partial"
     else:
         summary = "Tous les endpoints cloud répondent"
+        summary_key = "cloud_all"
 
     _cloud_diag_cache["checked_at"] = now
     _cloud_diag_cache["summary"] = summary
+    # Le client traduit ; les compteurs restent disponibles a part.
+    _cloud_diag_cache["summary_key"] = summary_key
+    _cloud_diag_cache["ok_count"] = ok_count
+    _cloud_diag_cache["total_count"] = total
     _cloud_diag_cache["items"] = items
     return dict(_cloud_diag_cache)
 
@@ -3710,7 +4080,13 @@ def _get_xtts_warmup_retry_after_seconds(now_ts: float | None = None) -> int:
         last = float(_last_xtts_warmup_ts or 0.0)
     except Exception:
         last = 0.0
-    wait = (last + float(KOMMZ_XTTS_WARMUP_COOLDOWN)) - now
+    # Apres un echec, la prochaine tentative est autorisee bien plus tot.
+    cooldown = (
+        float(KOMMZ_XTTS_WARMUP_COOLDOWN)
+        if _last_xtts_warmup_ok_ts >= last
+        else float(KOMMZ_XTTS_WARMUP_RETRY_AFTER_FAILURE)
+    )
+    wait = (last + cooldown) - now
     if wait <= 0:
         return 0
     try:
@@ -3846,7 +4222,7 @@ app_state = {
     "available_voices": VOICES_LIBRARY, 
     "current_voice_id": "DEFAULT_USER_VOICE", 
     "premium_unlocked": False,
-    "gender": "MALE", 
+    "gender": str(AUDIO_CONFIG.get("voice_gender", "Female") or "Female").upper(),
     "target_lang": "EN", 
     "windows_voice_name": "" 
 }
@@ -3861,7 +4237,7 @@ _user_pipeline_active = False
 _user_pipeline_active_source = ""
 last_f4_press = 0
 last_subtitles = []
-_ptt_lock = threading.Lock(); _ptt_chunks = []; _ptt_rec = False; _ptt_stream = None
+_ptt_lock = threading.Lock(); _ptt_chunks = []; _ptt_rec = False; _ptt_stream = None; _ptt_last_start_ts = 0.0; _ptt_last_stop_ts = 0.0; _ptt_max_duration_s = 30.0
 # Pre-roll micro pour ne pas couper le debut de phrase (actif surtout en mode Turbo).
 _ptt_preroll = collections.deque(maxlen=16)  # ~250-350ms selon samplerate/blocksize
 _ptt_stream_device = None
@@ -4018,30 +4394,39 @@ def _build_listen_health_snapshot() -> dict:
 
         level = "ok"
         summary = "Écoute stable"
+        summary_key = "listen_stable"
         if state in {"reconnecting", "restarting"}:
             level = "warn"
             summary = f"Écoute en reprise ({state})"
+            summary_key = "listen_recovering"
         if cooldown_hits >= 3 or flaps >= 3:
             level = "warn"
             summary = f"Écoute instable ({flaps} flaps, {cooldown_hits} cooldown hits)"
+            summary_key = "listen_unstable"
         if idle_restarts >= 4:
             level = "err"
             summary = f"Écoute fragile (relances idle: {idle_restarts})"
+            summary_key = "listen_fragile"
         elif idle_restarts >= 1 and level == "ok":
             level = "warn"
             summary = f"Écoute auto-réparée (relances idle: {idle_restarts})"
+            summary_key = "listen_self_healed"
         if (voice_played + voice_skipped) == 0 and idle_age > 120 and state in {"connected", "waiting_audio"}:
             level = "warn"
             summary = "Aucun événement voix récent (session silencieuse)"
+            summary_key = "listen_silent"
         if stale_restarts >= 2:
             level = "warn"
             summary = f"Écoute auto-réparée (stale stream: {stale_restarts})"
+            summary_key = "listen_stale_healed"
         if state == "connected" and stream_age > 90 and level == "ok":
             level = "warn"
             summary = "Flux audio inactif prolongé (surveillance active)"
+            summary_key = "listen_idle_stream"
         return {
             "level": level,
             "summary": summary,
+            "summary_key": summary_key,
             "state": state,
         }
     except Exception:
@@ -4497,6 +4882,10 @@ def set_fish_config():
             return jsonify({"ok": False, "error": "fish_api_key requis"}), 400
         AUDIO_CONFIG['fish_api_key'] = fish_key
         AUDIO_CONFIG['fish_voice_id'] = fish_voice_id
+        # V5.4: Auto-activer Fish Audio si la clé est configurée
+        if fish_key and AUDIO_CONFIG.get("tts_engine") != "FISH_AUDIO":
+            AUDIO_CONFIG["tts_engine"] = "FISH_AUDIO"
+            stealth_print("🐟 Moteur Fish Audio activé automatiquement (clé API configurée).")
         saved = save_settings()
         if saved:
             stealth_print(f"🐟 Fish Audio configuré (voice_id={fish_voice_id or 'zero-shot'})")
@@ -4521,6 +4910,22 @@ def api_factory_reset():
     keyboard.add_hotkey('f8', panic_reset)
     
     return jsonify({"ok": True, "message": "Réinitialisation effectuée"})
+
+@app.route('/api/set_sensitivity', methods=['GET', 'POST'])
+def api_set_sensitivity():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        val = data.get("val")
+    else:
+        val = request.args.get("val")
+    try:
+        val_f = float(val)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid value"})
+    AUDIO_CONFIG["vad_threshold"] = max(0.001, min(2.0, val_f))
+    AUDIO_CONFIG["vad_threshold_manual"] = True
+    save_settings()
+    return jsonify({"ok": True, "vad_threshold": AUDIO_CONFIG["vad_threshold"]})
 
 @app.route('/audio/config', methods=['POST'])
 def save_audio_api():
@@ -4606,8 +5011,182 @@ def save_audio_api():
         stealth_print(f"❌ Erreur lors du mapping audio : {e}")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+
+@app.route('/hud/visibility', methods=['POST'])
+def set_hud_visibility_api():
+    """Canal HTTP fiable pour afficher ou masquer le HUD externe."""
+    data = request.get_json(silent=True) or {}
+    visible = bool(data.get("visible", False))
+    _hud_enqueue_command("show" if visible else "hide")
+    startup_trace(f"hud: visibility request visible={visible}")
+    return jsonify({"ok": True, "visible": visible})
+
+@app.route("/ui/lang", methods=["POST"])
+def ui_lang_route():
+    """Le client declare sa langue d'affichage.
+
+    Sert aux messages assembles cote serveur, qui autrement resteraient
+    en francais quel que soit le reglage de l'utilisateur.
+    """
+    global CURRENT_UI_LANG
+    data = request.get_json(silent=True) or {}
+    lang = str(data.get("lang") or "").strip().lower()[:5]
+    previous = CURRENT_UI_LANG
+    CURRENT_UI_LANG = lang if lang in {"fr", "en"} else "fr"
+
+    # La langue conditionne l'URL du changelog renvoyee par le serveur de
+    # mise a jour. Sans ce rappel, la fenetre des nouveautes afficherait la
+    # langue precedente jusqu'au prochain cycle, soit cinq minutes plus tard.
+    if CURRENT_UI_LANG != previous:
+        try:
+            threading.Thread(
+                target=check_for_updates,
+                daemon=True,
+                name="Kommz-UpdateCheck-Lang",
+            ).start()
+        except Exception:
+            pass
+
+    return jsonify({"ok": True, "lang": CURRENT_UI_LANG})
+
+
+@app.route("/usage/summary")
+def usage_summary_route():
+    """Synthese du journal d'usage.
+
+    Lecture seule, service local uniquement. Repond a la question du cout
+    par utilisateur actif : la repartition par classe de cout montre quelle
+    part du volume porte le cout marginal reel.
+
+    Parametre : ?days=30 (1 a 365).
+    """
+    try:
+        days = int(request.args.get("days", 30))
+    except Exception:
+        days = 30
+    days = max(1, min(days, 365))
+
+    data = usage_rollup(days)
+
+    # Part de chaque classe de cout, pour eviter de la recalculer cote client.
+    total = data.get("events", 0) or 0
+    for bucket in data.get("by_cost_class", {}).values():
+        bucket["share_pct"] = round(100.0 * bucket["events"] / total, 1) if total else 0.0
+    for bucket in data.get("by_engine", {}).values():
+        bucket["share_pct"] = round(100.0 * bucket["events"] / total, 1) if total else 0.0
+
+    data["log_path"] = _usage_log_path()
+    return jsonify(data)
+
+
+# ============================================================================
+# EXPURGATION DE /status
+# ============================================================================
+# Le serveur ecoute sur 0.0.0.0 pour que le telephone puisse joindre /remote.
+# Consequence non voulue : /status etait lisible par n'importe qui sur le meme
+# reseau, avec toutes les cles d'API en clair. Un LAN party, une colocation ou
+# un reseau partage suffisait. Par ailleurs, un utilisateur qui colle son dump
+# dans un ticket de support publie ses cles sans le savoir.
+#
+# Regle : valeurs completes uniquement pour localhost (l'interface du logiciel
+# en a besoin). Tout le reste voit une version masquee. `?safe=1` force le
+# masquage meme en local, pour produire un dump partageable.
+
+_STATUS_SECRET_KEYS = frozenset({
+    "api_key", "deepgram_api_key", "openai_api_key", "azure_api_key",
+    "elevenlabs_api_key", "google_api_key", "aws_access_key", "aws_secret_key",
+    "fish_api_key", "kommz_api_key", "kommz_key",
+    "license_key", "voice_license_key",
+    # Un voice_id Fish est directement utilisable par qui possede une cle.
+    "fish_voice_id",
+})
+# Textes personnels : pas des credentials, mais personne ne veut voir sa voix
+# de reference retranscrite dans un ticket public.
+_STATUS_PERSONAL_TEXT_KEYS = frozenset({
+    "gpt_prompt_text", "gpt_style_text",
+})
+# Identifiants : pas des secrets au sens strict, mais ils designent le compte.
+_STATUS_IDENTITY_KEYS = frozenset({
+    "kommz_client_id", "kommz_id", "voice_active_id",
+    "hwid", "license_hwid",
+})
+# Chemins locaux : contiennent le nom de session Windows de l'utilisateur.
+_STATUS_PATH_KEYS = frozenset({
+    "gpt_ref_audio_path",
+})
+
+
+def _mask_secret(value):
+    """Garde les 4 derniers caracteres : assez pour reconnaitre quelle cle est
+    configuree, pas assez pour s'en servir."""
+    s = str(value or "")
+    if not s:
+        return ""
+    if len(s) <= 4:
+        return "***"
+    return "***" + s[-4:]
+
+
+def _mask_email(value):
+    s = str(value or "")
+    if "@" not in s:
+        return _mask_secret(s)
+    local, _, domain = s.partition("@")
+    if len(local) <= 2:
+        return "***@" + domain
+    return local[0] + "***" + local[-1] + "@" + domain
+
+
+def _mask_path(value):
+    s = str(value or "")
+    if not s:
+        return ""
+    return ".../" + os.path.basename(s.replace("\\", "/"))
+
+
+def _status_request_is_local() -> bool:
+    try:
+        addr = (request.remote_addr or "").strip()
+    except Exception:
+        return False
+    return addr in {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+def _redact_status_payload(payload):
+    """Masque les champs sensibles. Ne modifie jamais l'original."""
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    for key in _STATUS_SECRET_KEYS:
+        if key in out:
+            out[key] = _mask_secret(out[key])
+    for key in _STATUS_IDENTITY_KEYS:
+        if key in out:
+            out[key] = _mask_secret(out[key])
+    for key in _STATUS_PATH_KEYS:
+        if key in out:
+            out[key] = _mask_path(out[key])
+    for key in _STATUS_PERSONAL_TEXT_KEYS:
+        if key in out:
+            length = len(str(out[key] or ""))
+            out[key] = f"<{length} caracteres>" if length else ""
+    if isinstance(out.get("privacy_keywords"), list):
+        out["privacy_keywords"] = [f"<{len(out['privacy_keywords'])} mots-cles>"] if out["privacy_keywords"] else []
+    if "license_email" in out:
+        out["license_email"] = _mask_email(out["license_email"])
+    # La bibliotheque de voix porte des voice_id exploitables tels quels.
+    lib = out.get("voice_library")
+    if isinstance(lib, list):
+        out["voice_library"] = [
+            {**v, "voice_id": _mask_secret(v.get("voice_id"))} if isinstance(v, dict) else v
+            for v in lib
+        ]
+    out["status_redacted"] = True
+    return out
+
+
 @app.route("/status")
-def status_core(): 
+def status_core():
     # 1. Fonction robuste pour l'IP LAN (utile pour QR Code mobile)
     def get_lan_ip_with_candidates():
         def _is_private_ipv4(ip: str) -> bool:
@@ -4702,7 +5281,7 @@ def status_core():
         elif trial_voice and VOICE_LICENSE_MGR.expiration_str and VOICE_LICENSE_MGR.expiration_str != "N/A":
             trial_expiration = VOICE_LICENSE_MGR.expiration_str
     voice_licensed = False if (not CLOUD_FEATURES_ENABLED) else (True if COMMUNITY_EDITION else has_voice_license())
-    voice_active = voice_licensed and AUDIO_CONFIG.get("tts_engine") == "KOMMZ_VOICE"
+    voice_active = voice_licensed
     trial_quota_seconds = 1800
     trial_used_local = int(AUDIO_CONFIG.get("trial_voice_seconds_used_local", 0) or 0)
     trial_used_local = max(0, min(trial_quota_seconds, trial_used_local))
@@ -4719,7 +5298,7 @@ def status_core():
     lan_ip, lan_candidates = get_lan_ip_with_candidates()
     st.update({
         "is_active": app_state["is_active"],          # Pour le bouton MAIN (ON/OFF)
-        "gender": app_state.get("gender", "MALE"),    # Pour le bouton GENRE
+        "gender": str(AUDIO_CONFIG.get("voice_gender", "Female") or "Female"),
         "local_ip": lan_ip,
         "local_ips": lan_candidates,
         "remote_url": f"http://{lan_ip}:{VTP_CORE_PORT}/remote",
@@ -4760,10 +5339,16 @@ def status_core():
         "voice_cloud_limit_message": VOICE_CLOUD_LIMIT_STATE.get("message", ""),
         "xtts_runtime_state": xtts_runtime.get("state", "unknown"),
         "xtts_runtime_message": xtts_runtime.get("message", "Vérification en cours..."),
+        "xtts_runtime_message_key": xtts_runtime.get("message_key", "clone_checking"),
         "xtts_runtime_checked_at": xtts_runtime.get("checked_at", 0),
         "cloud_endpoints_diag": cloud_diag,
         "xtts_warmup_cooldown_seconds": int(KOMMZ_XTTS_WARMUP_COOLDOWN or 0),
         "xtts_warmup_last_ts": float(_last_xtts_warmup_ts or 0.0),
+        # Tentative reussie et tentative tout court : jusqu'ici confondues,
+        # donc un warmup en echec s'affichait comme un serveur chaud.
+        "xtts_warmup_last_ok_ts": float(_last_xtts_warmup_ok_ts or 0.0),
+        "xtts_warmup_last_error": str(_last_xtts_warmup_error or ""),
+        "xtts_scaledown_window_s": int(KOMMZ_XTTS_SCALEDOWN_WINDOW or 0),
         "xtts_warmup_retry_after": _get_xtts_warmup_retry_after_seconds(),
         "pipeline_runtime": _build_pipeline_runtime_payload(),
         "tts_fallback_runtime": _build_tts_fallback_runtime_payload(),
@@ -4814,7 +5399,8 @@ def status_core():
         "audio_blocksize": int(AUDIO_CONFIG.get("audio_blocksize", 1024) or 1024),
         "buffer_last_latency_ms": _buffer_autotune_state.get("last_latency_ms"),
         "mini_overlay_enabled": bool(AUDIO_CONFIG.get("mini_overlay_enabled", False)),
-        # FIX #2: StreamBuffer drop counter
+        "fish_api_key": str(AUDIO_CONFIG.get("fish_api_key", "") or ""),
+        "fish_voice_id": str(AUDIO_CONFIG.get("fish_voice_id", "") or ""),
         "stream_buffer_total_drops": int(_STREAM_BUFFER_TOTAL_DROPS),
     })
 
@@ -4919,6 +5505,16 @@ def status_core():
             "ally_voice_played": int(_listen_runtime.get("ally_voice_played", 0) or 0),
             "ally_voice_skipped": int(_listen_runtime.get("ally_voice_skipped", 0) or 0),
             "ally_voice_rate_limited": int(_listen_runtime.get("ally_voice_rate_limited", 0) or 0),
+            # Spéculation : sans ces chiffres, impossible de savoir si elle sert.
+            "speculative_fired": int(_SPECULATIVE_STATE.get("fired", 0) or 0),
+            "speculative_hits": int(_SPECULATIVE_STATE.get("hits", 0) or 0),
+            "speculative_misses": int(_SPECULATIVE_STATE.get("misses", 0) or 0),
+            # Un echec de 2 caracteres et un echec total ne disent pas la meme
+            # chose : le premier se regle, le second condamne la fonction.
+            "speculative_near_misses": int(_SPECULATIVE_STATE.get("near_misses", 0) or 0),
+            "speculative_last_miss_ratio": float(_SPECULATIVE_STATE.get("last_miss_ratio", 0.0) or 0.0),
+            "speculative_last_miss_final": str(_SPECULATIVE_STATE.get("last_miss_final", "") or ""),
+            "speculative_last_miss_closest": str(_SPECULATIVE_STATE.get("last_miss_closest", "") or ""),
             "ally_short_merged": int(_listen_runtime.get("ally_short_merged", 0) or 0),
             "last_event_at": float(_listen_runtime.get("last_event_at", 0.0) or 0.0),
             "autotune_level": int(_listen_autotune_state.get("level", 0) or 0),
@@ -4942,7 +5538,14 @@ def status_core():
         },
     })
 
-    return jsonify(_repair_payload_strings(st))
+    payload = _repair_payload_strings(st)
+    try:
+        force_safe = str(request.args.get("safe", "")).strip().lower() in {"1", "true", "yes"}
+    except Exception:
+        force_safe = False
+    if force_safe or not _status_request_is_local():
+        payload = _redact_status_payload(payload)
+    return jsonify(payload)
 
 
 
@@ -5132,15 +5735,22 @@ del /Q "%~f0" >nul 2>&1
 
 
 def _install_update_background():
+    # Les statuts remontent a l'interface et a l'overlay : ils doivent suivre
+    # la langue du client, comme le reste depuis la V5.3.1.
+    _en = (globals().get("CURRENT_UI_LANG") or "fr") == "en"
+
+    def _m(en_text, fr_text):
+        return en_text if _en else fr_text
+
     url = (UPDATE_STATE.get("download_url") or "").strip()
     expected_sha256 = (UPDATE_STATE.get("download_sha256") or "").strip().lower()
     if not url:
         UPDATE_STATE["installing"] = False
-        UPDATE_STATE["install_status"] = "URL de mise à jour introuvable"
+        UPDATE_STATE["install_status"] = _m("Update URL not found", "URL de mise à jour introuvable")
         return
     try:
         UPDATE_STATE["installing"] = True
-        UPDATE_STATE["install_status"] = "Téléchargement en cours..."
+        UPDATE_STATE["install_status"] = _m("Downloading...", "Téléchargement en cours...")
         add_subtitle("SYSTEM >> UPDATE: TELECHARGEMENT", "SYS")
 
         base_name = (url.split("?")[0].rstrip("/").split("/")[-1] or "Kommz_Update.exe").strip()
@@ -5157,16 +5767,16 @@ def _install_update_background():
             got_sha256 = _sha256_file(installer_path).lower()
             if got_sha256 != expected_sha256:
                 UPDATE_STATE["installing"] = False
-                UPDATE_STATE["install_status"] = "Échec mise à jour : checksum invalide"
-                UPDATE_STATE["error"] = "Checksum SHA256 invalide pour l'installateur téléchargé"
+                UPDATE_STATE["install_status"] = _m("Update failed: invalid checksum", "Échec mise à jour : checksum invalide")
+                UPDATE_STATE["error"] = _m("Invalid SHA256 checksum for the downloaded installer", "Checksum SHA256 invalide pour l'installateur téléchargé")
                 add_subtitle("SYSTEM >> UPDATE: CHECKSUM INVALIDE", "SYS")
                 return
 
-        UPDATE_STATE["install_status"] = "Téléchargement terminé. Lancement..."
+        UPDATE_STATE["install_status"] = _m("Download complete. Launching...", "Téléchargement terminé. Lancement...")
         add_subtitle("SYSTEM >> UPDATE: INSTALLER LANCE", "SYS")
 
         if _launch_windows_self_replacer(installer_path):
-            UPDATE_STATE["install_status"] = "Mise à jour prête. Redémarrage..."
+            UPDATE_STATE["install_status"] = _m("Update ready. Restarting...", "Mise à jour prête. Redémarrage...")
             add_subtitle("SYSTEM >> UPDATE: REDEMARRAGE", "SYS")
 
             def _exit_for_update():
@@ -5179,11 +5789,69 @@ def _install_update_background():
 
         subprocess.Popen([installer_path], shell=False)
         UPDATE_STATE["installing"] = False
-        UPDATE_STATE["install_status"] = "Installateur lancé"
+        UPDATE_STATE["install_status"] = _m("Installer launched", "Installateur lancé")
     except Exception as e:
         UPDATE_STATE["installing"] = False
-        UPDATE_STATE["install_status"] = f"Échec mise à jour : {e}"
+        UPDATE_STATE["install_status"] = _m(f"Update failed: {e}", f"Échec mise à jour : {e}")
         UPDATE_STATE["error"] = str(e)
+
+@app.route("/update/install", methods=["POST"])
+def update_install_route():
+    """Lance l'installation de la mise a jour detectee.
+
+    Repond immediatement : le telechargement, la verification d'empreinte et
+    le lancement de l'installateur se font dans un thread. Le client suit
+    l'avancement via `update_install_status` dans /status.
+    """
+    en = (globals().get("CURRENT_UI_LANG") or "fr") == "en"
+
+    def msg(en_text, fr_text):
+        return en_text if en else fr_text
+
+    # Deja en cours : ne pas lancer un second telechargement en parallele.
+    if UPDATE_STATE.get("installing"):
+        return jsonify({
+            "ok": True,
+            "already_running": True,
+            "install_status": UPDATE_STATE.get("install_status", ""),
+        })
+
+    if not UPDATE_STATE.get("update_available"):
+        return jsonify({
+            "ok": False,
+            "error": msg("No update available", "Aucune mise a jour disponible"),
+        }), 409
+
+    url = (UPDATE_STATE.get("download_url") or "").strip()
+    if not url:
+        return jsonify({
+            "ok": False,
+            "error": msg("Update URL missing", "URL de mise a jour introuvable"),
+        }), 409
+
+    # Sans empreinte, on telecharge un binaire qu'on ne peut pas verifier.
+    # On l'autorise mais on le signale : le client peut avertir l'utilisateur.
+    unverified = not (UPDATE_STATE.get("download_sha256") or "").strip()
+
+    try:
+        UPDATE_STATE["installing"] = True
+        UPDATE_STATE["install_status"] = msg("Starting...", "Demarrage...")
+        threading.Thread(
+            target=_install_update_background,
+            daemon=True,
+            name="Kommz-UpdateInstall",
+        ).start()
+    except Exception as e:
+        UPDATE_STATE["installing"] = False
+        UPDATE_STATE["install_status"] = ""
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    return jsonify({
+        "ok": True,
+        "unverified": unverified,
+        "latest_version": UPDATE_STATE.get("latest_version", ""),
+    })
+
 
 import keyboard # Assure-toi que ce module est importé
 
@@ -5279,7 +5947,8 @@ def capture_next_key_thread():
     k_listener.stop()
 
     if captured_key:
-        AUDIO_CONFIG["ptt_key"] = captured_key
+        AUDIO_CONFIG["ptt_hotkey"] = captured_key
+        save_settings()
         stealth_print(f"✅ ENREGISTRÉ : {captured_key}")
 
     AUDIO_CONFIG["is_capturing"] = False
@@ -5527,6 +6196,14 @@ def set_full_config():
         AUDIO_CONFIG["edge_voice"] = d.get("edge_voice")
         if 'app_state' in globals():
             app_state["windows_voice_name"] = d.get("edge_voice")
+
+    if "gender" in d:
+        gender = str(d.get("gender") or "Female").strip().capitalize()
+        if gender not in {"Female", "Male"}:
+            gender = "Female"
+        AUDIO_CONFIG["voice_gender"] = gender
+        if "app_state" in globals():
+            app_state["gender"] = gender.upper()
     
     save_settings()
     stealth_print("Configuration generale sauvegardee.")
@@ -5820,6 +6497,7 @@ def kommz_tts_generator(text):
         """
         Appelle directement Modal /v1/synthesis (bypass Render.com).
         Modal fait le lookup Supabase lui-même avec l'api_key fournie.
+        Pas besoin d'audio référence dans le Gamer app.
         """
         if not _resolve_kommz_voice_endpoint() or not api_key_cfg:
             return None
@@ -5971,6 +6649,7 @@ def kommz_tts_generator(text):
     # V5: si un voice_id est configuré, on le tente en priorité stricte
     # avant Hybrid/clone pour respecter la voix demandée par l'utilisateur.
     if client_id_cfg and api_key_cfg:
+        # Essai direct Modal (bypass Render.com) si on a l'audio référence en RAM
         voice_audio = _try_modal_synthesis_direct(text, client_id_cfg)
         if voice_audio:
             stealth_print("✅ Voice_id Modal direct OK (bypass Render.com).")
@@ -5980,6 +6659,7 @@ def kommz_tts_generator(text):
             )
             yield voice_audio
             return
+        # Fallback Render.com si Modal indisponible
         voice_audio = _try_voice_id_api()
         if voice_audio:
             yield voice_audio
@@ -6052,6 +6732,15 @@ def kommz_tts_generator(text):
                 hybrid_engine="Fallback",
                 hybrid_detail=f"GPT indisponible · {_short_runtime_text(hy_err, 96)}",
             )
+            voice_audio = _try_modal_synthesis_direct(text, client_id_cfg)
+            if voice_audio:
+                stealth_print("✅ Voice_id Modal direct OK (fallback Hybrid).")
+                _set_pipeline_runtime(
+                    tts_engine="Kommz Voice API",
+                    tts_route="Modal direct /v1/synthesis (fallback Hybrid)",
+                )
+                yield voice_audio
+                return
             voice_audio = _try_voice_id_api()
             if voice_audio:
                 yield voice_audio
@@ -6129,7 +6818,21 @@ def kommz_tts_generator(text):
             return
         prewarm_kommz_xtts(force=False, timeout_connect=2 if turbo_mode else 3, timeout_read=10 if turbo_mode else 20)
 
-        files = {'speaker_wav': ('audio.wav', audio_source_bytes, 'audio/wav')}
+        ref_payload, ref_info = _shrink_reference_for_xtts(
+            audio_source_bytes,
+            max_ref_sec=tts_max_ref_len,
+            gpt_cond_sec=tts_gpt_cond_len,
+        )
+        if ref_info.get("changed"):
+            stealth_print(
+                "📦 Référence réduite : "
+                f"{ref_info['in_bytes']} → {ref_info['out_bytes']} octets "
+                f"({ref_info.get('seconds')}s @ {ref_info.get('sr')} Hz)"
+            )
+        elif ref_info.get("error"):
+            stealth_print(f"ℹ️ Référence envoyée telle quelle : {ref_info['error']}")
+
+        files = {'speaker_wav': ('audio.wav', ref_payload, 'audio/wav')}
         data = {
             'text': text,
             'language': xtts_lang,
@@ -6350,10 +7053,16 @@ def toggle_module(name):
         if name in runtime_names:
             module_name = runtime_names[name]
             module_state, module_detail = _module_runtime_defaults(module_name, state)
-            _set_module_runtime(module_name, module_state, module_detail)
-        save_config()              # Sauvegarde JSON
+            module_state_key, module_detail_key = _module_runtime_keys(module_name, state)
+            _set_module_runtime(module_name, module_state, module_detail,
+                                state_key=module_state_key,
+                                detail_key=module_detail_key)
+        saved = save_settings()
+        if not saved:
+            stealth_print(f"⚠️ MODULE {name}: sauvegarde échouée")
+            return jsonify({"ok": False, "state": state, "error": "CONFIG_SAVE_FAILED"}), 500
         stealth_print(f"MODULE {name} -> {state}")
-        return jsonify({"ok": True, "state": state})
+        return jsonify({"ok": True, "state": state, "config_file": str(CONFIG_FILE)})
     
     return jsonify({"ok": False})
 
@@ -7077,7 +7786,7 @@ COMMUNITY_PRESET_STORE = [
             "vad_threshold": 0.025,
             "quality_preset": "fast",
             "game_noise_profile": "combat_mixed",
-            "ally_block_french": True,
+            "ally_block_french": False,
             "ally_sentence_punct_min_words": 3,
             "ally_sentence_hard_flush_words": 8,
             "ally_tts_similarity_play_below": 0.88,
@@ -7112,7 +7821,7 @@ COMMUNITY_PRESET_STORE = [
             "vad_threshold": 0.03,
             "quality_preset": "fast",
             "game_noise_profile": "br_large",
-            "ally_block_french": True,
+            "ally_block_french": False,
             "ally_sentence_punct_min_words": 3,
             "ally_sentence_hard_flush_words": 9,
             "ally_tts_similarity_play_below": 0.85,
@@ -7147,7 +7856,7 @@ COMMUNITY_PRESET_STORE = [
             "vad_threshold": 0.022,
             "quality_preset": "fast",
             "game_noise_profile": "moba",
-            "ally_block_french": True,
+            "ally_block_french": False,
             "ally_sentence_punct_min_words": 2,
             "ally_sentence_hard_flush_words": 7,
             "ally_tts_similarity_play_below": 0.9,
@@ -7182,7 +7891,7 @@ COMMUNITY_PRESET_STORE = [
             "vad_threshold": 0.02,
             "quality_preset": "fast",
             "game_noise_profile": "survival",
-            "ally_block_french": True,
+            "ally_block_french": False,
             "ally_sentence_punct_min_words": 2,
             "ally_sentence_hard_flush_words": 6,
             "ally_tts_similarity_play_below": 0.9,
@@ -7287,7 +7996,7 @@ COMMUNITY_PRESET_STORE = [
             "vad_threshold": 0.028,
             "quality_preset": "quality",
             "game_noise_profile": "stable",
-            "ally_block_french": True,
+            "ally_block_french": False,
             "ally_sentence_punct_min_words": 3,
             "ally_sentence_hard_flush_words": 10,
             "ally_tts_similarity_play_below": 0.85,
@@ -7322,7 +8031,7 @@ COMMUNITY_PRESET_STORE = [
             "vad_threshold": 0.022,
             "quality_preset": "fast",
             "game_noise_profile": "combat_mixed",
-            "ally_block_french": True,
+            "ally_block_french": False,
             "ally_sentence_punct_min_words": 2,
             "ally_sentence_hard_flush_words": 7,
             "ally_tts_similarity_play_below": 0.88,
@@ -7968,14 +8677,40 @@ def monitoring_loop():
                 stream_in = None; stream_out = None
 
                 # OutputStream ouvert séparément (devices différents → pas de duplex)
-                stream_out = sd.OutputStream(
-                    device=int(dst_out),
-                    samplerate=rate_out,
-                    channels=out_ch,
-                    blocksize=1024,
-                    dtype="float32",
-                    latency='low',
-                )
+                _wasapi = None
+                try:
+                    import sounddevice as _sd
+                    _dev = _sd.query_devices(int(dst_out))
+                    _host_api = _dev.get("hostapi", -1)
+                    if _host_api >= 0:
+                        _host_info = _sd.query_hostapis(_host_api)
+                        if "WASAPI" in str(_host_info.get("name", "")).upper():
+                            _wasapi = _sd.WasapiSettings()
+                except Exception:
+                    pass
+                try:
+                    stream_out = sd.OutputStream(
+                        device=int(dst_out),
+                        samplerate=rate_out,
+                        channels=out_ch,
+                        blocksize=1024,
+                        dtype="float32",
+                        latency='low',
+                        extra_settings=_wasapi,
+                    )
+                except Exception:
+                    # Fallback: retry without WASAPI settings
+                    try:
+                        stream_out = sd.OutputStream(
+                            device=int(dst_out),
+                            samplerate=rate_out,
+                            channels=out_ch,
+                            blocksize=1024,
+                            dtype="float32",
+                            latency='low',
+                        )
+                    except Exception:
+                        raise
                 stream_out.start()
 
                 # ResampleStream soxr si nécessaire
@@ -8100,7 +8835,8 @@ def apply_tilt_shield(text):
             processed = pattern.sub(good, processed)
             
     if processed != text:
-        _set_module_runtime("tilt", "Filtré", "Expression toxique désamorcée")
+        _set_module_runtime("tilt", "Filtré", "Expression toxique désamorcée",
+                        state_key="state_filtered", detail_key="tilt_filtered")
     else:
         _set_module_runtime("tilt", "Actif", "Aucune toxicité détectée")
     return processed    
@@ -8139,21 +8875,24 @@ def handle_smart_commands(text, src_lang):
         if "capture" in lower or "screenshot" in lower or "photo" in lower:
             keyboard.press_and_release('f12')
             stealth_print("📸 Macro : F12 (Screenshot)")
-            _set_module_runtime("macros", "Déclenché", "Macro screenshot F12 exécutée")
+            _set_module_runtime("macros", "Déclenché", "Macro screenshot F12 exécutée",
+                        state_key="state_triggered", detail_key="macros_screenshot")
             return "", True
             
         # Dis "Clip ça" pour faire Alt+F10 (Shadowplay)
         if "clip" in lower and ("ça" in lower or "it" in lower):
             keyboard.press_and_release('alt+f10')
             stealth_print("🎬 Macro : Alt+F10 (Clip)")
-            _set_module_runtime("macros", "Déclenché", "Macro clip Alt+F10 exécutée")
+            _set_module_runtime("macros", "Déclenché", "Macro clip Alt+F10 exécutée",
+                        state_key="state_triggered", detail_key="macros_clip")
             return "", True
             
         # Dis "Mute Discord" pour Ctrl+Maj+M
         if "mute" in lower and "discord" in lower:
             keyboard.press_and_release('ctrl+shift+m')
             stealth_print("🔇 Macro : Mute Discord")
-            _set_module_runtime("macros", "Déclenché", "Macro mute Discord exécutée")
+            _set_module_runtime("macros", "Déclenché", "Macro mute Discord exécutée",
+                        state_key="state_triggered", detail_key="macros_mute")
             return "", True
 
     # --- MODULE STREAMER 3 : SMART MARKER (NOUVEAU) ---
@@ -8199,10 +8938,147 @@ def apply_gaming_context(text):
     for term, replacement in context_map.items():
         if term in processed: processed = processed.replace(term, replacement); modified = True
     if modified:
-        _set_module_runtime("autocontext", "Enrichi", "Contexte gaming injecté dans le texte")
+        _set_module_runtime("autocontext", "Enrichi", "Contexte gaming injecté dans le texte",
+                        state_key="state_enriched", detail_key="autocontext_injected")
     else:
         _set_module_runtime("autocontext", "Actif", "Aucun terme gaming à enrichir")
     return processed.strip() if modified else text
+
+def _spec_norm(text):
+    """Forme comparable entre un partiel et le texte final.
+
+    `smart_format` ajoute ponctuation et capitales à la finalisation : sans
+    cette normalisation, partiel et final ne se rencontrent jamais.
+    """
+    s = (text or "").lower()
+    # Les apostrophes sont supprimees, pas remplacees par une espace : le
+    # partiel dit souvent `hes` la ou le final dit `he's`, et `l ennemi` ne
+    # rencontrerait jamais `lennemi`. Meme traitement des deux cotes.
+    s = re.sub(r"['’ʼ`]", "", s)
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _spec_cache_put(text, target, translated):
+    if not translated:
+        return
+    key = (_spec_norm(text), target)
+    if not key[0]:
+        return
+    with _SPECULATIVE_LOCK:
+        _SPECULATIVE_CACHE[key] = translated
+        while len(_SPECULATIVE_CACHE) > _SPECULATIVE_CACHE_MAX:
+            _SPECULATIVE_CACHE.popitem(last=False)
+
+
+def _spec_cache_get(text, target):
+    key = (_spec_norm(text), target)
+    if not key[0]:
+        return None
+    with _SPECULATIVE_LOCK:
+        return _SPECULATIVE_CACHE.get(key)
+
+
+def _speculative_prewarm(text, target):
+    """Traduit un partiel en tâche de fond pour préchauffer SHADOW_CACHE.
+
+    Ne bloque jamais l'appelant et n'échoue jamais bruyamment : c'est une
+    optimisation, pas une étape du pipeline.
+
+    Garde-fous :
+      - un seul appel en vol à la fois, pour ne pas saturer le traducteur
+      - intervalle minimum entre deux tentatives
+      - le texte doit avoir changé de façon significative depuis la dernière
+    """
+    if not bool(AUDIO_CONFIG.get("speculative_translation_enabled", True)):
+        return
+    text = (text or "").strip()
+    if len(text) < 8:
+        return
+
+    min_gap = float(AUDIO_CONFIG.get("speculative_translation_min_gap_s", 0.45) or 0.45)
+    min_gap = max(0.15, min(3.0, min_gap))
+    # 3 caracteres, pas plus : mesure a l'appui, un seuil de 4 ecarte deja le
+    # dernier partiel d'une phrase courte, qui est justement celui qui a une
+    # chance de correspondre au texte final.
+    min_new_chars = int(AUDIO_CONFIG.get("speculative_translation_min_new_chars", 3) or 3)
+    min_new_chars = max(2, min(12, min_new_chars))
+
+    now = time.time()
+    with _SPECULATIVE_LOCK:
+        if _SPECULATIVE_STATE["inflight"] > 0:
+            return
+        if (now - _SPECULATIVE_STATE["last_fire_ts"]) < min_gap:
+            return
+        previous = _SPECULATIVE_STATE["last_text"]
+        # Le partiel doit avoir assez grandi pour valoir un appel.
+        if previous and text.startswith(previous) and (len(text) - len(previous)) < min_new_chars:
+            return
+        if text == previous:
+            return
+        _SPECULATIVE_STATE["inflight"] = 1
+        _SPECULATIVE_STATE["last_fire_ts"] = now
+        _SPECULATIVE_STATE["last_text"] = text
+        _SPECULATIVE_STATE["fired"] += 1
+
+    def _work():
+        try:
+            out = translate_text(text, target)
+            _spec_cache_put(text, target, out)
+        except Exception:
+            pass
+        finally:
+            with _SPECULATIVE_LOCK:
+                _SPECULATIVE_STATE["inflight"] = 0
+
+    try:
+        threading.Thread(target=_work, daemon=True,
+                         name="Kommz-SpeculativeTranslate").start()
+    except Exception:
+        with _SPECULATIVE_LOCK:
+            _SPECULATIVE_STATE["inflight"] = 0
+
+
+def _speculative_record(text, target):
+    """Note si le texte final était déjà en cache. Sert uniquement à mesurer
+    le taux de réussite : sans ce chiffre, impossible de savoir si la
+    spéculation apporte quoi que ce soit."""
+    try:
+        hit = _spec_cache_get(text, target) is not None
+        if hit:
+            with _SPECULATIVE_LOCK:
+                _SPECULATIVE_STATE["hits"] += 1
+            return
+
+        # Echec : on mesure de combien. Un ratio eleve signifie que le dernier
+        # partiel etait presque le texte final, donc que le reglage peut encore
+        # servir. Un ratio bas signifie que les partiels sont trop loin du
+        # final sur ce flux, et la aucun reglage ne sauvera la fonction.
+        final_norm = _spec_norm(text)
+        best_ratio = 0.0
+        best_key = ""
+        if final_norm:
+            with _SPECULATIVE_LOCK:
+                candidates = [k for (k, t) in _SPECULATIVE_CACHE.keys() if t == target]
+            for key in candidates[-12:]:
+                try:
+                    ratio = SequenceMatcher(None, key, final_norm).ratio()
+                except Exception:
+                    continue
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_key = key
+
+        with _SPECULATIVE_LOCK:
+            _SPECULATIVE_STATE["misses"] += 1
+            if best_ratio >= _SPECULATIVE_NEAR_MISS_RATIO:
+                _SPECULATIVE_STATE["near_misses"] += 1
+            _SPECULATIVE_STATE["last_miss_ratio"] = round(best_ratio, 3)
+            _SPECULATIVE_STATE["last_miss_final"] = final_norm[:120]
+            _SPECULATIVE_STATE["last_miss_closest"] = best_key[:120]
+    except Exception:
+        pass
+
 
 def translate_text(text, target, source=None):
     global SHADOW_CACHE
@@ -8275,7 +9151,8 @@ def add_subtitle(text, lang="FR"):
     is_system = (str(lang).upper() == "SYS")
 
     if _is_stealth_mode_active() and is_system and not _is_stealth_critical_message(text):
-        _set_module_runtime("stealth", "Masqué", "Messages système non essentiels cachés de l'overlay")
+        _set_module_runtime("stealth", "Masqué", "Messages système non essentiels cachés de l'overlay",
+                        state_key="state_hidden", detail_key="stealth_overlay_hidden")
         return
     
     # --- FIX: Respecter la case "Ma Voix" de l'interface ---
@@ -8323,7 +9200,8 @@ def hybrid_activation_loop():
             if not AUDIO_CONFIG.get("hybrid_activation_active"):
                 _set_module_runtime("hybrid", "Inactif", "Détection automatique de la voix désactivée")
             time.sleep(1.0); pre_roll.clear(); continue
-        _set_module_runtime("hybrid", "Écoute", "En attente d'une phrase micro")
+        _set_module_runtime("hybrid", "Écoute", "En attente d'une phrase micro",
+                        state_key="state_listening", detail_key="hybrid_listening")
 
         try:
             tid = resolve_input_device_cfg(AUDIO_CONFIG.get("game_input_device"))
@@ -8358,7 +9236,8 @@ def hybrid_activation_loop():
                     if not recording:
                         if vol > thresh:
                             stealth_print(f"🎤 [Auto] Phrase...")
-                            _set_module_runtime("hybrid", "Déclenché", "Voix détectée automatiquement")
+                            _set_module_runtime("hybrid", "Déclenché", "Voix détectée automatiquement",
+                        state_key="state_triggered", detail_key="hybrid_triggered")
                             recording = True; global _hybrid_running; _hybrid_running = True
                             phrase_buffer = list(pre_roll); phrase_buffer.append(mono); silence_frames = 0
                         else:
@@ -8409,7 +9288,29 @@ def deepgram_transcribe_local(audio_path, api_key):
         stealth_print(f"⚠️ Erreur Deepgram Local: {e}")
     return "", "fr"        
 
-def fish_audio_tts_generator(text: str, api_key: str):
+def _fish_emotion_tag(expressive_analysis=None, expressive_mode: str = "neutral") -> str:
+    """Mappe les signaux expressifs Kommz vers les marqueurs S2 de Fish Audio."""
+    if str(expressive_mode or "neutral").strip().lower() != "styled":
+        return ""
+    analysis = expressive_analysis if isinstance(expressive_analysis, dict) else {}
+    active = {str(item or "").strip().lower() for item in analysis.get("active", [])}
+    primary = str(analysis.get("primary") or "").strip().lower()
+    cues = active | {primary}
+    if "laugh" in cues:
+        return "[laughing]"
+    if "anger" in cues:
+        return "[angry]"
+    if "sigh" in cues:
+        return "[sad]"
+    if "hesitation" in cues:
+        return "[nervous]"
+    intensity = str(analysis.get("intensity") or "").strip().lower()
+    if intensity == "strong":
+        return "[excited]"
+    return ""
+
+
+def fish_audio_tts_generator(text: str, api_key: str, expressive_analysis=None, expressive_mode: str = "neutral"):
     """
     Générateur Fish Audio TTS — appelle api.fish.audio/v1/tts
     et retourne l'audio WAV en bytes.
@@ -8421,10 +9322,13 @@ def fish_audio_tts_generator(text: str, api_key: str):
 
     FISH_TTS_URL = "https://api.fish.audio/v1/tts"
     voice_id = str(AUDIO_CONFIG.get("fish_voice_id", "") or "").strip()
+    emotion_tag = _fish_emotion_tag(expressive_analysis, expressive_mode)
+    request_text = f"{emotion_tag} {text}".strip() if emotion_tag else text
 
     payload: dict = {
-        "text": text,
+        "text": request_text,
         "format": "wav",
+        "sample_rate": 44100,
         "latency": "normal",
         "normalize": True,
     }
@@ -8450,11 +9354,16 @@ def fish_audio_tts_generator(text: str, api_key: str):
             stealth_print("⚠️ Fish Audio: pas de référence vocale disponible")
 
     try:
+        stealth_print(
+            f"🐟 Fish Audio request: model=s2.1-pro voice_id={'oui' if voice_id else 'non'} "
+            f"emotion={emotion_tag or 'neutral'}"
+        )
         resp = _req.post(
             FISH_TTS_URL,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "model": "s2.1-pro",
             },
             json=payload,
             timeout=60,
@@ -8996,7 +9905,8 @@ def _do_playback(target_ids, audio_48k, speaker_name):
     global _is_speaking
     _is_speaking = True
     if _is_turbo_mode_active():
-        _set_module_runtime("turbo", "Lecture", "Sortie audio priorisée")
+        _set_module_runtime("turbo", "Lecture", "Sortie audio priorisée",
+                        state_key="state_playback", detail_key="turbo_playback")
     try:
         for did in target_ids:
             try:
@@ -9177,7 +10087,8 @@ def start_rec():
 
             _ptt_rec = True
             if AUDIO_CONFIG.get("turbo_latency_active", False):
-                _set_module_runtime("turbo", "Capture", "Pipeline rapide actif pendant l'enregistrement micro")
+                _set_module_runtime("turbo", "Capture", "Pipeline rapide actif pendant l'enregistrement micro",
+                        state_key="state_capture", detail_key="turbo_capture")
             
         except Exception as e:
             stealth_print(f"❌ Erreur REC : {e}")
@@ -9749,7 +10660,8 @@ def process_text_pipeline(text, src_lang):
     pipeline_started = time.perf_counter()
     _reset_latency_runtime("Pipeline lancé")
     if AUDIO_CONFIG.get("turbo_latency_active", False):
-        _set_module_runtime("turbo", "Pipeline", "Traitement temps réel priorisé")
+        _set_module_runtime("turbo", "Pipeline", "Traitement temps réel priorisé",
+                        state_key="state_pipeline", detail_key="turbo_pipeline")
     
     # 1. Nettoyage
     text, is_cmd = handle_smart_commands(text, src_lang)
@@ -9822,6 +10734,7 @@ def process_text_pipeline(text, src_lang):
 
         if current_engine == "WINDOWS": 
             _record_latency("tts", "Windows / Edge en cours", tts_ms=0.0)
+            log_usage_event("edge", tts_ms=0.0)
             _set_pipeline_runtime(
                 hybrid_engine="Bypass Hybrid",
                 hybrid_detail="Windows / Edge utilisé directement",
@@ -9836,7 +10749,8 @@ def process_text_pipeline(text, src_lang):
             cached_audio = _shadow_cache_get(SHADOW_AUDIO_CACHE, shadow_audio_key)
             if cached_audio is not None:
                 stealth_print("👻 Shadow AI: audio en cache réutilisé.")
-                _set_module_runtime("shadow", "Cache hit", "Audio Shadow AI réutilisé")
+                _set_module_runtime("shadow", "Cache hit", "Audio Shadow AI réutilisé",
+                        state_key="state_cache_hit", detail_key="shadow_cache_hit")
                 _set_pipeline_runtime(
                     tts_engine="KOMMZ_VOICE",
                     tts_route="Cache audio Shadow AI",
@@ -9846,7 +10760,8 @@ def process_text_pipeline(text, src_lang):
             # ✅ OPTIMIZED: Utilisation du nouveau générateur
             gen = kommz_tts_generator(trans)
             if _is_turbo_mode_active():
-                _set_module_runtime("turbo", "Synthèse", "Kommz Voice priorisé avec timeouts réduits")
+                _set_module_runtime("turbo", "Synthèse", "Kommz Voice priorisé avec timeouts réduits",
+                        state_key="state_synthesis", detail_key="turbo_synthesis")
             
             def run_kommz():
                 tts_started = time.perf_counter()
@@ -9860,6 +10775,7 @@ def process_text_pipeline(text, src_lang):
                         tts_ms = (time.perf_counter() - tts_started) * 1000.0
                         total_ms = (time.perf_counter() - pipeline_started) * 1000.0
                         _record_latency("tts", "KOMMZ_VOICE rendu audio prêt", tts_ms=tts_ms)
+                        log_usage_event("kommz_voice", tts_ms=tts_ms)
                         with _latency_runtime_lock:
                             LATENCY_RUNTIME_STATE["total_ms"] = round(total_ms, 1)
                             LATENCY_RUNTIME_STATE["updated_at"] = time.time()
@@ -9874,9 +10790,59 @@ def process_text_pipeline(text, src_lang):
                     # Fallback
                     w_gen = windows_natural_generator(trans)
                     _record_latency("tts", "Fallback Windows après erreur Kommz", tts_ms=0.0)
+                    log_usage_event("edge", tts_ms=0.0, ok=False)
                     resample_and_play(w_gen, "", "MOI", 16000, emotion_hint=trans)
 
             threading.Thread(target=run_kommz, daemon=True).start()
+
+        elif current_engine == "FISH_AUDIO":
+            fish_key = str(AUDIO_CONFIG.get("fish_api_key", "") or "").strip()
+            if not fish_key:
+                stealth_print("⚠️ Fish Audio: clé API absente, fallback Edge TTS")
+                _record_latency("tts", "Fallback Windows: clé Fish Audio absente", tts_ms=0.0)
+                log_usage_event("edge", tts_ms=0.0, ok=False)
+                gen = windows_natural_generator(trans)
+                threading.Thread(
+                    target=resample_and_play,
+                    args=(gen, "", "MOI", 16000),
+                    kwargs={"emotion_hint": trans},
+                    daemon=True,
+                ).start()
+                return
+
+            def run_fish():
+                tts_started = time.perf_counter()
+                try:
+                    stealth_print("🐟 Lancement Fish Audio TTS...")
+                    audio_blob = b"".join(
+                        chunk for chunk in fish_audio_tts_generator(
+                            trans,
+                            fish_key,
+                            expressive_analysis=expressive_analysis,
+                            expressive_mode=expressive_tts_mode,
+                        ) if chunk
+                    )
+                    if not audio_blob:
+                        stealth_print("⚠️ Fish Audio: génération audio vide.")
+                        _push_quality_log("warn", "tts_empty", "Génération Fish Audio vide", "Fish Audio n'a retourné aucun audio")
+                        return
+                    _record_latency(
+                        "tts",
+                        "Fish Audio rendu audio prêt",
+                        tts_ms=(time.perf_counter() - tts_started) * 1000.0,
+                    )
+                    _set_pipeline_runtime(
+                        tts_engine="FISH_AUDIO",
+                        tts_route="Fish Audio API",
+                    )
+                    resample_and_play([audio_blob], "", "MOI", 24000, emotion_hint=trans)
+                except Exception as exc:
+                    stealth_print(f"⚠️ Erreur Fish Audio: {exc}")
+                    _push_quality_log("warn", "tts_fallback_windows", "Fallback TTS Windows après erreur Fish Audio", str(exc))
+                    gen = windows_natural_generator(trans)
+                    resample_and_play(gen, "", "MOI", 16000, emotion_hint=trans)
+
+            threading.Thread(target=run_fish, daemon=True).start()
             
 def load_voice_from_id(voice_id, audio_url):
     """
@@ -9991,7 +10957,8 @@ def stop_rec():
         if text:
             stealth_print(f"⚡ REÇU ({lang}): [{text}]")
             if AUDIO_CONFIG.get("turbo_latency_active", False):
-                _set_module_runtime("turbo", "Traitement", "Transcription et routage audio lancés")
+                _set_module_runtime("turbo", "Traitement", "Transcription et routage audio lancés",
+                        state_key="state_processing", detail_key="turbo_processing")
             enqueue_user_pipeline(text, lang, source="ptt")
 
     except Exception as e:
@@ -10140,7 +11107,7 @@ class DeepgramEngine:
                                 channels=loop_ch,
                                 blocksize=1024,
                                 dtype="float32",
-                                extra_settings=sd.WasapiSettings(loopback=True),
+                                extra_settings=sd.WasapiSettings(),
                             )
                             rec_mode = "sd_wasapi_loopback"
                             stealth_print(f"👂 Mode écoute: WASAPI loopback défaut [{dflt_out}] @ {listen_rate}Hz")
@@ -10362,16 +11329,23 @@ class DeepgramEngine:
                                     nonlocal sentence_buffer, last_send_time, last_printed_text
                                     nonlocal last_audio_norm, last_audio_ts, ally_recent_play_ts
                                     if not getattr(result, "is_final", False):
+                                        # Partiel : on ne l'affiche ni ne le
+                                        # prononce, on s'en sert seulement pour
+                                        # préchauffer la traduction.
+                                        try:
+                                            part = result.channel.alternatives[0].transcript
+                                        except Exception:
+                                            part = ""
+                                        part = (part or "").strip()
+                                        if part:
+                                            candidate = (sentence_buffer + " " + clean_gaming_text(part)).strip()
+                                            _speculative_prewarm(candidate, "FR")
                                         return
                                     try:
                                         ts = result.channel.alternatives[0].transcript
                                     except Exception:
                                         ts = ""
                                     if len((ts or "").strip()) <= 1:
-                                        return
-
-                                    if AUDIO_CONFIG.get("ally_block_french", False) and is_strictly_french(ts):
-                                        sentence_buffer = ""
                                         return
 
                                     cleaned = clean_gaming_text(ts)
@@ -10401,7 +11375,12 @@ class DeepgramEngine:
                                     if not should_flush:
                                         return
 
-                                    trad = translate_text(sentence_buffer, "FR") or sentence_buffer
+                                    _speculative_record(sentence_buffer, "FR")
+                                    # Traduction deja preparee sur un partiel :
+                                    # on evite l'aller-retour reseau.
+                                    trad = _spec_cache_get(sentence_buffer, "FR")
+                                    if not trad:
+                                        trad = translate_text(sentence_buffer, "FR") or sentence_buffer
                                     trad = (trad or sentence_buffer).strip()
                                     if not trad:
                                         sentence_buffer = ""
@@ -10505,6 +11484,10 @@ class DeepgramEngine:
                                                     encoding="linear16",
                                                     channels=1,
                                                     sample_rate=listen_rate,
+                                                    # Deepgram ne les envoie pas
+                                                    # par défaut. Sans eux, aucune
+                                                    # spéculation possible.
+                                                    interim_results=True,
                                                 )
                                             )
                                             start_ok = True
@@ -10671,7 +11654,7 @@ def record_and_recognize():
         stealth_print(f"🎤 Rec ({SELECTED_MIC_NAME} @ {fs}Hz)...", end='', flush=True)
         
         recording = []
-        PTT_KEY = AUDIO_CONFIG.get("ptt_key", "ctrl+shift")
+        PTT_KEY = AUDIO_CONFIG.get("ptt_hotkey", "ctrl+shift")
 
         # 2. Enregistrement
         with sd.InputStream(samplerate=fs, device=SELECTED_MIC_ID, channels=native_channels, dtype='float32') as stream:
@@ -10897,7 +11880,8 @@ def transcribe_safe(audio_source, sample_rate=16000):
                     stt_ms=stt_ms,
                 )
                 if turbo_mode:
-                    _set_module_runtime("turbo", "STT", "Whisper Modal priorisé en mode rapide")
+                    _set_module_runtime("turbo", "STT", "Whisper Modal priorisé en mode rapide",
+                        state_key="state_stt", detail_key="turbo_stt")
                 return transcript, detected
         except Exception as modal_err:
             stealth_print(f"⚠️ Whisper Modal indisponible, fallback Deepgram: {modal_err}")
@@ -11002,7 +11986,8 @@ def transcribe_safe(audio_source, sample_rate=16000):
                             stt_detail=f"{detected.upper()} · fallback STT" + (" · turbo" if turbo_mode else ""),
                         )
                         if turbo_mode:
-                            _set_module_runtime("turbo", "Fallback STT", "Deepgram lancé avec timeouts réduits")
+                            _set_module_runtime("turbo", "Fallback STT", "Deepgram lancé avec timeouts réduits",
+                        state_key="state_fallback_stt", detail_key="turbo_fallback_stt")
                         return transcript, detected
                     except (KeyError, IndexError):
                         return "", "fr"
@@ -11133,7 +12118,7 @@ def mini_stats_overlay_loop():
 # ═══════════════════════════════════════════════════════════════════════════
 
 _HUD_QT_WINDOW  = None  # fenêtre PySide6 du HUD
-_HUD_QT_THREAD  = None  # reliquat compat/debug : toujours None en mode main-thread
+_HUD_QT_THREAD  = None  # thread dédié : webview.start() bloque le thread principal
 _HUD_VISIBLE    = False
 _HUD_QT_APP     = None  # QApplication singleton
 _HUD_LABELS     = {}    # clé -> QLabel
@@ -11158,7 +12143,7 @@ def _hud_default_xy():
 
 
 def _ensure_hud_qt_app():
-    """Garantit l'existence d'une unique QApplication sur le thread principal."""
+    """Garantit l'existence d'une unique QApplication dans le thread HUD."""
     global _HUD_QT_APP
     if _HUD_QT_APP is not None:
         return _HUD_QT_APP
@@ -11528,7 +12513,7 @@ def _hud_build_window():
     globals()["_hud_set_fn"] = _hud_set
 
     _poll()
-    stealth_print("✅ HUD PySide6 initialisé sur main thread")
+    stealth_print("✅ HUD PySide6 initialisé sur thread dédié")
     _hud_start_command_timer()
     return win
 
@@ -11552,8 +12537,9 @@ def _hud_close_from_ui():
 
 
 def _hud_enqueue_command(action, **payload):
-    """Empile une commande HUD à exécuter sur le thread principal Qt."""
+    """Empile une commande HUD à exécuter dans la boucle Qt dédiée."""
     _HUD_CMD_QUEUE.put({"action": action, **payload})
+    startup_trace(f"hud: queue push action={action} size={_HUD_CMD_QUEUE.qsize()}")
     try:
         stealth_print(
             f"🔍 HUD queue push action={action} "
@@ -11576,6 +12562,7 @@ def _hud_process_pending_commands():
             break
 
         action = cmd.get("action")
+        startup_trace(f"hud: queue pop action={action}")
         try:
             stealth_print(
                 f"🔍 HUD queue pop action={action} "
@@ -11627,7 +12614,7 @@ def _hud_process_pending_commands():
 
 
 def _hud_start_command_timer():
-    """Démarre le polling Qt des commandes HUD sur le thread principal."""
+    """Démarre le polling Qt des commandes dans la boucle HUD dédiée."""
     global _HUD_CMD_TIMER
     try:
         from PySide6.QtCore import QTimer
@@ -11654,29 +12641,67 @@ def _hud_start_command_timer():
 
 
 def _create_hud_window_if_enabled():
-    """V5.3: Crée la fenêtre HUD Qt au démarrage puis applique son état visible/caché."""
-    global _HUD_VISIBLE
-    _ensure_hud_qt_app()
-    _hud_start_command_timer()
-    stealth_print(f"🔍 HUD debug: mini_overlay_enabled={AUDIO_CONFIG.get('mini_overlay_enabled')}")
-    if not AUDIO_CONFIG.get("mini_overlay_enabled", False):
-        stealth_print(
-            f"🔍 HUD boot skipped: enabled=False "
-            f"timer_started={_HUD_CMD_TIMER is not None} "
-            f"window_exists={_HUD_QT_WINDOW is not None}"
-        )
-        return None
-    window = _hud_build_window()
-    _HUD_VISIBLE = True
-    return window
+    """Démarre le HUD dans sa propre boucle Qt.
+
+    ``webview.start()`` occupe le thread principal. Les QTimer du HUD doivent
+    donc appartenir à un thread qui exécute réellement ``QApplication.exec()``.
+    """
+    global _HUD_QT_THREAD
+    if _HUD_QT_THREAD is not None and _HUD_QT_THREAD.is_alive():
+        return _HUD_QT_THREAD
+
+    def _hud_thread_main():
+        app = _ensure_hud_qt_app()
+        if app is None:
+            return
+        _hud_start_command_timer()
+        if AUDIO_CONFIG.get("mini_overlay_enabled", False):
+            _hud_build_window()
+        else:
+            stealth_print("🔍 HUD boot skipped: enabled=False")
+        stealth_print("✅ Boucle Qt HUD démarrée sur thread dédié")
+        app.exec()
+
+    _HUD_QT_THREAD = threading.Thread(
+        target=_hud_thread_main,
+        daemon=True,
+        name="Kommz-HUD-Qt",
+    )
+    _HUD_QT_THREAD.start()
+    return _HUD_QT_THREAD
+
+
+def _version_tuple(raw):
+    """Convertit "5.3.1" en (5, 3, 1) pour une comparaison fiable.
+
+    Un suffixe de pre-release ("5.4.0-beta") est ignore pour le tri, ce qui
+    suffit ici : on ne compare que des versions stables entre elles.
+    """
+    parts = []
+    for chunk in str(raw or "").strip().lstrip("vV").split("."):
+        m = re.match(r"(\d+)", chunk)
+        parts.append(int(m.group(1)) if m else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:4])
+
+
+def _is_newer_version(candidate, current):
+    """True si `candidate` est strictement plus recent que `current`."""
+    try:
+        return _version_tuple(candidate) > _version_tuple(current)
+    except Exception:
+        return False
 
 
 def check_for_updates():
     if not AUDIO_CONFIG.get("auto_update_active", False):
-        _set_module_runtime("autoupdate", "Inactif", "Vérification automatique désactivée")
+        _set_module_runtime("autoupdate", "Inactif", "Vérification automatique désactivée",
+                            state_key="state_inactive", detail_key="autoupdate_off")
         return
     if not UPDATE_CHECK_URL:
-        _set_module_runtime("autoupdate", "Non configuré", "Aucun service de mise à jour configuré")
+        _set_module_runtime("autoupdate", "Non configuré", "Aucun service de mise à jour configuré",
+                            state_key="state_unconfigured", detail_key="autoupdate_unconfigured")
         return
     try:
         r = requests.get(
@@ -11685,21 +12710,39 @@ def check_for_updates():
                 "current": CURRENT_VERSION,
                 "channel": UPDATE_CHANNEL,
                 "platform": "windows",
+                # Le serveur ne peut pas deviner la langue d'affichage :
+                # on la lui transmet plutot que de recevoir du francais.
+                "lang": (globals().get("CURRENT_UI_LANG") or "fr"),
             },
             timeout=(4, 12),
         )
         payload = r.json() if r.ok else {}
-        if not r.ok or not payload.get("ok"):
+        # Un fichier statique n'a pas de champ "ok" : on ne l'exige que si
+        # la reponse vient d'un service dynamique qui le fournit.
+        if not r.ok or ("ok" in payload and not payload.get("ok")):
             UPDATE_STATE["error"] = payload.get("error", f"update check failed ({r.status_code})")
-            _set_module_runtime("autoupdate", "Erreur", _short_runtime_text(UPDATE_STATE["error"], 96))
+            _set_module_runtime("autoupdate", "Erreur", _short_runtime_text(UPDATE_STATE["error"], 96),
+                                state_key="state_error")
             return
 
         UPDATE_STATE["checked_at"] = int(time.time())
-        UPDATE_STATE["update_available"] = bool(payload.get("update_available"))
+        # Si le serveur ne tranche pas, on compare nous-memes. Cela permet
+        # d'heberger un simple fichier JSON au lieu d'un service.
+        if "update_available" in payload:
+            UPDATE_STATE["update_available"] = bool(payload.get("update_available"))
+        else:
+            UPDATE_STATE["update_available"] = _is_newer_version(
+                payload.get("latest_version"), CURRENT_VERSION
+            )
         UPDATE_STATE["latest_version"] = str(payload.get("latest_version") or CURRENT_VERSION)
         UPDATE_STATE["download_url"] = str(payload.get("download_url") or "").strip()
         UPDATE_STATE["changelog_url"] = str(payload.get("changelog_url") or "").strip()
-        UPDATE_STATE["download_sha256"] = str(payload.get("download_sha256") or "").strip().lower()
+        _raw_sha = str(payload.get("download_sha256") or "").strip().lower()
+        # Certains outils prefixent l'empreinte ("sha256:abc..."). Sans ce
+        # nettoyage la comparaison echoue et bloque toute installation.
+        if ":" in _raw_sha:
+            _raw_sha = _raw_sha.rsplit(":", 1)[-1].strip()
+        UPDATE_STATE["download_sha256"] = _raw_sha
         UPDATE_STATE["force_update"] = bool(payload.get("force_update"))
         UPDATE_STATE["minimum_version"] = str(payload.get("minimum_version") or "").strip()
         UPDATE_STATE["message"] = str(payload.get("message") or "").strip()
@@ -11708,15 +12751,19 @@ def check_for_updates():
         if UPDATE_STATE["update_available"]:
             if UPDATE_STATE["force_update"]:
                 add_subtitle(f"SYSTEM >> UPDATE OBLIGATOIRE {UPDATE_STATE['latest_version']}", "SYS")
-                _set_module_runtime("autoupdate", "Update", f"Mise à jour obligatoire {UPDATE_STATE['latest_version']}")
+                _set_module_runtime("autoupdate", "Update", f"Mise à jour obligatoire {UPDATE_STATE['latest_version']}",
+                                    state_key="state_update")
             else:
                 add_subtitle(f"SYSTEM >> UPDATE {UPDATE_STATE['latest_version']} DISPO", "SYS")
-                _set_module_runtime("autoupdate", "Update", f"Version {UPDATE_STATE['latest_version']} disponible")
+                _set_module_runtime("autoupdate", "Update", f"Version {UPDATE_STATE['latest_version']} disponible",
+                                    state_key="state_update")
         else:
-            _set_module_runtime("autoupdate", "À jour", f"Version {CURRENT_VERSION} confirmée")
+            _set_module_runtime("autoupdate", "À jour", f"Version {CURRENT_VERSION} confirmée",
+                                state_key="state_uptodate", detail_key="autoupdate_current")
     except Exception as e:
         UPDATE_STATE["error"] = str(e)
-        _set_module_runtime("autoupdate", "Erreur", _short_runtime_text(str(e), 96))
+        _set_module_runtime("autoupdate", "Erreur", _short_runtime_text(str(e), 96),
+                                state_key="state_error")
 
 
 def update_check_loop():
@@ -11867,6 +12914,33 @@ def _toggle_monitoring_core(source="F3"):
 def toggle_monitoring():
     _toggle_monitoring_core(source="F3/HOTKEY")
     
+def _ptt_watchdog_loop():
+    """
+    Watchdog PTT: coupe l'enregistrement après _ptt_max_duration_s
+    pour éviter un blocage si le key-up est perdu (ex: TTS qui démarre).
+    """
+    global _ptt_rec, _ptt_chunks, _ptt_stream, _ptt_stream_device, _ptt_last_start_ts
+    while True:
+        time.sleep(2.0)
+        with _ptt_lock:
+            if _ptt_rec and _ptt_last_start_ts > 0.0:
+                elapsed = time.time() - _ptt_last_start_ts
+                if elapsed > _ptt_max_duration_s:
+                    stealth_print(f"⏰ PTT watchdog: coupure auto après {elapsed:.1f}s")
+                    _ptt_rec = False
+                    if _ptt_stream is not None:
+                        try:
+                            if not _ptt_keepalive_enabled():
+                                _ptt_stream.stop(); _ptt_stream.close()
+                                _ptt_stream = None
+                                _ptt_stream_device = None
+                        except Exception:
+                            pass
+                    _ptt_chunks = []
+
+_ptt_watchdog_thread = threading.Thread(target=_ptt_watchdog_loop, daemon=True)
+_ptt_watchdog_thread.start()
+
 def panic_reset():
     """ Réinitialise tout le système audio """
     global _ptt_rec
@@ -12146,6 +13220,7 @@ class Bridge:
         """V5.3: Ferme le HUD Qt."""
         try:
             _hud_enqueue_command("hide")
+            startup_trace("hud: Bridge.hide_hud request")
             stealth_print("✅ HUD Qt masquage demandé (Bridge.hide_hud)")
             return True
         except Exception as e:
@@ -12254,8 +13329,35 @@ app.register_blueprint(ui_bp)
 app.register_blueprint(audio_bp)
 app.register_blueprint(cloud_bp)
 
+# ==================== MENTIONS LÉGALES ====================
+def print_legal_notices():
+    try:
+        banner = (
+            "=" * 60 + "\n"
+            f" Kommz Gamer v{CURRENT_VERSION} — Real-time Voice Translator\n"
+            " Licensed under the GNU AGPLv3.\n"
+            # L'AGPLv3 impose de rendre les sources accessibles :
+            # l'adresse doit pointer vers le depot reel.
+            " Source code: https://github.com/KommzAI/Kommz-Gamer\n"
+            + "=" * 60
+        )
+        print(banner)
+        # Écrire aussi dans le fichier de log pour que la mention
+        # soit la toute première ligne du startup.log.
+        try:
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            log_path = get_startup_log_path()
+            with open(log_path, "a", encoding="utf-8") as fh:
+                fh.write(f"[{stamp}] {banner}\n")
+        except Exception:
+            pass
+    except Exception:
+        pass
+
 # ==================== MAIN CORRIGÉ & COMPLET ====================
 if __name__ == "__main__":
+    print_legal_notices()
+
     # V5.2: Mode debug / trace via CLI
     import argparse as _argparse
     _ap = _argparse.ArgumentParser(description="Kommz Gamer V5.2 — Voice translation for gamers")
@@ -12296,6 +13398,15 @@ if __name__ == "__main__":
     startup_trace("main: load_settings begin")
     load_settings()
     startup_trace("main: load_settings done")
+    # V5.4: Auto-renseigner gpt_api_url si persistance vide ou absente
+    # (fonctionne en local et après build Nuitka)
+    if CLOUD_FEATURES_ENABLED:
+        current_gpt_url = str(AUDIO_CONFIG.get("gpt_api_url", "") or "").strip()
+        if not current_gpt_url:
+            AUDIO_CONFIG["gpt_api_url"] = DEFAULT_KOMMZ_GPT_API_URL
+            stealth_print(f"🔗 GPT-SoVITS auto-configuré : {DEFAULT_KOMMZ_GPT_API_URL}")
+    # Le moteur persiste est une preference utilisateur. La presence d'une
+    # cle Fish ne doit pas modifier le moteur selectionne au demarrage.
     # Réhydrate immédiatement LICENSE_MGR / VOICE_LICENSE_MGR depuis la config
     # persistée pour que /status réponde "activé" dès le 1er poll JS.
     startup_trace("main: sync_license_mgr begin")
@@ -12334,9 +13445,22 @@ if __name__ == "__main__":
                     AUDIO_CONFIG["tts_engine"] = "WINDOWS"
                     save_settings()
                 return
+
+            # Le warmup part AVANT la verification de licence, et non apres.
+            # Auparavant il etait place derriere refresh_license_states_from_server(),
+            # un appel reseau vers Render : quand celui-ci depassait le delai
+            # (Render en gratuit met des dizaines de secondes a se reveiller),
+            # l'exception etait capturee plus bas et le warmup n'avait jamais
+            # lieu. Mesure a l'appui : xtts_warmup_last_ts restait a 0.0 et la
+            # premiere synthese payait 60 s de chargement de modele.
+            #
+            # Le warmup est une requete sans effet de bord. Si la licence se
+            # revele absente, le moteur bascule juste apres et cette requete
+            # aura ete inutile : compromis largement favorable.
+            if AUDIO_CONFIG.get("tts_engine") == "KOMMZ_VOICE":
+                prewarm_kommz_xtts(force=True)
+
             if COMMUNITY_EDITION:
-                if AUDIO_CONFIG.get("tts_engine") == "KOMMZ_VOICE":
-                    prewarm_kommz_xtts(force=False)
                 return
             refresh_license_states_from_server()
             if AUDIO_CONFIG.get("tts_engine") == "KOMMZ_VOICE" and not has_voice_license():
@@ -12351,13 +13475,17 @@ if __name__ == "__main__":
     threading.Thread(target=_refresh_licenses_safe, daemon=True).start()
     threading.Thread(target=_user_pipeline_worker_loop, daemon=True).start()
     
-    # Force le logiciel en mode actif par défaut à chaque démarrage.
-    app_state["is_active"] = True
-    AUDIO_CONFIG["is_listening"] = True
-    AUDIO_CONFIG["monitoring_enabled"] = True
-    AUDIO_CONFIG["tts_active"] = True
-    stealth_print(f"🔍 PRE-SAVE: mini_overlay_enabled={AUDIO_CONFIG.get('mini_overlay_enabled')}")
-    save_settings()
+    # SUPPRIMÉ V5.3 : force-override écrasait les
+    # paramètres utilisateur au démarrage.
+    # is_listening et monitoring_enabled sont chargés
+    # depuis settings via load_settings()
+    # # Force le logiciel en mode actif par défaut à chaque démarrage.
+    # app_state["is_active"] = True
+    # AUDIO_CONFIG["is_listening"] = True
+    # AUDIO_CONFIG["monitoring_enabled"] = True
+    # AUDIO_CONFIG["tts_active"] = True
+    # stealth_print(f"🔍 PRE-SAVE: mini_overlay_enabled={AUDIO_CONFIG.get('mini_overlay_enabled')}")
+    # save_settings()
     
     # 2. VÉRIFICATION INTELLIGENTE DU PÉRIPHÉRIQUE (SORTIE)
     try:
@@ -12521,11 +13649,13 @@ if __name__ == "__main__":
             ctypes.windll.user32.MessageBoxW(0, msg, "Kommz Gamer - Démarrage serveur", 0x30)
         except Exception:
             pass
+    
     window = webview.create_window(
         title="Kommz Gamer", 
         url=ui_url, 
-        width=1200, 
-        height=850, 
+        width=1500, 
+        height=1070, 
+        min_size=(1100, 700),
         background_color='#0b0f14', 
         resizable=True,
         js_api=api_bridge # Active le lien JS->Python
@@ -12562,4 +13692,9 @@ if __name__ == "__main__":
             ctypes.windll.user32.MessageBoxW(0, msg, "Kommz Gamer - Erreur UI", 0x10)
         except Exception:
             pass
+    try:
+        save_settings()
+        stealth_print("? Config sauvegardée à la fermeture.")
+    except Exception as e:
+        stealth_print(f"?? Erreur save à la fermeture : {e}")
     sys.exit(0)

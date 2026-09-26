@@ -4,11 +4,41 @@
 
 ## Kommz Gamer 5.3 - 2026-08-05
 
-### Stabilization bugfix
-- Phase 1 — Audited blueprints (`modules/listen`, `modules/guide`, `modules/remote`, `modules/scenes`) for missing symbols: zero missing symbols confirmed in `vtp_core.py`.
-- Phase 2 — Removed the duplicate `_listen_now_utc_iso` (`listen_bp.py`); fixed `_mobile_connected` to propagate correctly to `vtp_core` instead of a local `globals()` write.
-- Phase 3 — Audited license checks: already centralized in `modules/license/license.py`, no rework needed.
-- Phase 4 — Migrated audio device IDs (`game_input_device` / `game_output_device`) from raw PortAudio index to a canonical stable signature `"{hostapi}::{name}"` (e.g. `WASAPI::CABLE OUTPUT`), with a separate runtime cache and full backward compatibility for existing configs.
+### Audio and real-time pipeline
+- Consolidated the remote voice pipeline with Whisper Modal, GPT-SoVITS Modal, and XTTS Modal, with explicit fallback when cloud services are unavailable.
+- Stabilized routing between the configured microphone, virtual output, headset monitoring, and synthesis engines.
+- Fixed monitoring sample-rate fallback to preserve reliable playback when devices do not share the same native sample rate.
+- Added runtime diagnostics for the STT engine, Hybrid routing, active TTS engine, and audio-module state.
+- Added automatic game detection through audio fingerprints, with process, window-title, fingerprint, and manual-selection fallback.
+- Added ASIO support, buffer auto-tuning, multi-device support, and native VB-Cable / Voicemeeter integration.
+
+### Voice processing and presets
+- Voice Focus V3: automatic calibration, frequency-band noise reduction, de-essing, de-clicking, de-clipping, auto-gain riding, VAD v2 with Silero fallback, lightweight voiceprint, and anti-reverberation processing.
+- Added Intelligent Universal preset, microphone-type presets, JSON import/export, community preset store, and preset scheduling.
+- Added Auto preset mode with multi-game detection and alt-tab handling.
+
+### UI and operations
+- Added separate visual states for transcription, Hybrid, and final synthesis in the voice pipeline.
+- Added runtime module supervision and audio-service health information.
+- Strengthened the listening watchdog and session reporting for long-running diagnostics.
+- Added enriched real-time overlay, local analytics dashboard, structured JSON session export, and latency, CPU, and RAM metrics.
+
+### Architecture
+- Modularized Flask into 13 blueprints covering configuration, licensing, audio, overlay, TTS, STT, listening, scenes, UI, and remote access.
+- Extracted about 81 routes from `vtp_core.py`, retaining runtime routes tied to audio globals and HUD state.
+- Cleaned the repository and removed code or files made obsolete by the refactor.
+
+### Stabilization and configuration
+- Audited blueprints (`modules/listen`, `modules/guide`, `modules/remote`, `modules/scenes`) for missing symbols: zero missing symbols confirmed in `vtp_core.py`.
+- Removed the duplicate `_listen_now_utc_iso` (`listen_bp.py`); fixed `_mobile_connected` to propagate correctly to `vtp_core` instead of a local `globals()` write.
+- Audited license checks: already centralized in `modules/license/license.py`, no rework needed.
+- Migrated audio device IDs (`game_input_device` / `game_output_device`) from raw PortAudio indexes to canonical stable `"{hostapi}::{name}"` signatures (for example `WASAPI::CABLE OUTPUT`), with a separate runtime cache and backward compatibility for existing configurations.
+- Fixed configuration persistence in compiled mode: template migration, durable runtime path, and explicit `CONFIG_FILE` import.
+- Addressed post-refactor stability issues: missing audio defaults, license persistence, monitoring rate mismatch, HUD polling, overlay loop, subtitle output, device validation, and F2/F3 handlers.
+
+### Verification
+- Syntax compilation of `vtp_core.py` and `modules/config/config.py` was validated after the stabilization fixes.
+- Targeted validation covered audio-signature resolution: host API, name fallback, input/output direction, and compatibility with existing configurations.
 
 ## Kommz Gamer 4.6 - 2026-03-22
 

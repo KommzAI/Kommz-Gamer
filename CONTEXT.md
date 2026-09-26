@@ -5,6 +5,7 @@ Je travaille sur **Kommz Gamer**, un logiciel desktop Windows orienté **gaming,
 - **V5.1 = terminée**
 - **V5.2 = terminée**
 - **V5.3 = terminée**
+- **V5.3.1 = terminée** (interface, i18n, mise à jour, journal d'usage)
 - **Version actuelle de travail = V5.4**
 
 Le projet est pensé en plusieurs éditions :
@@ -41,6 +42,7 @@ Fichiers les plus importants :
 - **V5.1** : stabilisation, longue session, watchdog, QA, presets, voice focus auto — ✅ terminé
 - **V5.2** : polish, nouveaux presets jeux, UI/UX, overlay desktop, builds, QA avancée — ✅ terminé
 - **V5.3** : intelligence audio, refactoring Flask complet, bugfix stabilisation — ✅ terminé
+- **V5.3.1** : interface reprise, couverture FR/EN complète, mise à jour réparée, journal d'usage — ✅ terminé
 - **V5.4** : social, streaming, multijoueur — 🔄 en cours
 
 ---
@@ -120,6 +122,40 @@ Fichiers les plus importants :
 
 ---
 
+## V5.3.1 — terminé
+
+Version de consolidation entre la V5.3 et la V5.4.
+
+**Le correctif le plus important** : la vérification des mises à jour ne
+fonctionnait pour personne depuis toujours. `UPDATE_CHECK_URL` lisait une
+variable d'environnement vide par défaut, qu'aucun utilisateur ne définit.
+Le contrôle s'arrêtait sur « Non configuré » avant tout appel réseau.
+Adresse désormais dans le code. Les utilisateurs déjà en 5.3 ne recevront
+jamais de notification : leur binaire porte l'ancienne valeur vide.
+
+**Internationalisation** : 45 clés traduites n'étaient branchées sur aucun
+élément. Le backend renvoie désormais des codes d'état neutres à côté de son
+texte, il ne décide plus de la langue d'affichage. `applyLang()` recalcule
+les blocs assemblés en JavaScript, qui restaient figés dans la langue du
+premier rendu.
+
+**Interface** : jetons `:root` de 10 à 24, deux échelles de gris fusionnées,
+icônes de navigation en SVG via masque CSS, barre latérale regroupée en
+Essentiel / Studio / Avancé.
+
+**Journal d'usage (nouveau)** : une ligne JSONL par phrase synthétisée dans
+`%LOCALAPPDATA%\KommzGamer\usage_log.jsonl`, avec la route
+`/usage/summary`. Le coût ne suit pas le volume traduit mais le chemin
+emprunté : Edge TTS n'a pas de coût marginal, le clonage réveille un GPU
+facturé, cold starts compris.
+
+**Bugs de fond corrigés** : `<span>` non fermé retirant 2 éléments du DOM,
+14 attributs `data-fr=tr('...')` non quotés affichés littéralement, variable
+CSS `--accent` jamais définie, 12 drapeaux de modules absents des défauts,
+empreinte SHA256 préfixée bloquant toute installation.
+
+---
+
 ## État avant V5.4 (bugfix V5.3 terminé)
 Tous les prérequis sont verts :
 - Blueprints : zéro symbole manquant confirmé
@@ -151,21 +187,108 @@ Prochaine étape : lancer la V5.4
 - [ ] Sous-titres overlay in-game
 - [ ] Traduction texte + voix simultanée
 
-## 3. Voice Profiles & équipe
-- [ ] Reconnaissance vocale du joueur (voiceprint matching)
+## 3. Mise à jour — circuit complet
+
+> La V5.3.1 avait réparé la détection. L'installation n'avait jamais été
+> testée : la notification ne s'affichait jamais, le bouton n'avait jamais
+> servi, et sa route manquante n'avait jamais été remarquée.
+
+- [✅] Route `POST /update/install` créée. Elle n'existait nulle part, le
+  `fetch` échouait sur « Erreur ouverture mise à jour ».
+- [✅] Lance `_install_update_background()` (`vtp_core.py` ~L5458) dans un
+  thread. Cette fonction faisait déjà tout, sans jamais être appelée.
+- [✅] Refus explicites (409), protection contre le double lancement,
+  champ `unverified` si le serveur ne fournit pas d'empreinte.
+- [✅] Suivi de l'avancement côté client via `/status` toutes les 1,5 s.
+- [✅] 8 messages de progression traduits via `CURRENT_UI_LANG`.
+- [ ] Tester le circuit complet 5.3.1 → 5.4, jamais fait de bout en bout.
+- [ ] Point fragile jamais exécuté : `_launch_windows_self_replacer()`.
+
+### Règle de précédence de la configuration — à connaître avant toute modification de défaut
+
+Le fichier utilisateur (`%LOCALAPPDATA%\KommzGamer\settings.private.json`)
+l'emporte toujours sur `AUDIO_CONFIG` dans `config.py`. **Changer un défaut
+dans le code n'a donc aucun effet sur une installation existante.** Deux
+occurrences réelles : `auto_update_active` (personne ne recevait les mises à
+jour) et `speculative_translation_min_new_chars` (seuil 6 → 0 cache hit).
+
+Depuis la V5.4, `SETTINGS_SCHEMA_VERSION` + `_SETTINGS_MIGRATIONS` réalignent
+une fois les clés explicitement listées, puis avancent le numéro de schéma.
+Procédure pour corriger un défaut à l'avenir :
+
+1. Modifier la valeur dans `AUDIO_CONFIG`.
+2. Incrémenter `SETTINGS_SCHEMA_VERSION`.
+3. Ajouter la clé sous ce nouveau numéro dans `_SETTINGS_MIGRATIONS`.
+
+Ne jamais ajouter une clé de réglage utilisateur délibéré (périphérique,
+raccourci, clé d'API) à une migration. `settings_schema_version` est exclu de
+`_merge_missing_template_settings()` : un modèle livré avec un build récent
+l'injecterait sinon dans un ancien profil et la migration se croirait faite.
+
+Support : **fermer l'application avant** toute modification manuelle du
+fichier. Tant qu'elle tourne, le premier réglage touché dans l'interface
+réécrit tout le fichier depuis la mémoire et efface l'édition.
+
+## 4. Endpointing & tours de parole
+
+> Piste issue d'un échange public. Deux corrections de l'interlocuteur sont
+> intégrées : elles changent le coût de la tâche et le levier à actionner.
+> **Rien n'est encore mesuré.**
+
+**Mesurer d'abord**
+- [ ] Relever `ally_voice_rate_limited` (exposé dans `/status`) sur une vraie
+  session à 4-5 joueurs. Jamais consulté à ce jour.
+- [ ] Comparer `stt_ms + translate_ms + tts_ms` au délai réellement ressenti.
+
+**Moins coûteux en temps de développement, à faire ensuite**
+- [✅] **Traduction spéculative sur les partiels.** `interim_results` n'était
+  pas activé (Deepgram ne l'active pas par défaut) : aucun partiel n'arrivait.
+  Approche : préchauffage de `SHADOW_CACHE` plutôt que restructuration de la
+  validation, donc aucun texte spéculatif affiché ni prononcé et logique de
+  flush inchangée. Garde-fous : un appel en vol, intervalle et delta minimum,
+  interrupteur `speculative_translation_enabled`.
+- [✅] **Première mesure : échec.** 63 spéculations, 0 réussite sur 21 phrases.
+  `smart_format` ponctue à la finalisation, donc les clés ne correspondent
+  jamais. Corrigé par un cache dédié normalisé, et un seuil de caractères
+  nouveaux abaissé de 6 à 3 (à 4 le dernier partiel était déjà écarté).
+- [ ] **Remesurer en session réelle.** Simulation 4/4, mais ça ne prouve rien.
+  Taux faible → désactiver via `speculative_translation_enabled`.
+- [ ] **Éviction prioritaire de la file voix alliés**, et non relèvement du
+  plafond. Correction d'une idée fausse : relever la limite (6 lectures /
+  8 s) n'aide pas, la lecture étant **séquentielle**. Jouer cinq lignes à la
+  suite est pire que d'en abandonner quatre. Le levier est *quoi* abandonner :
+  aujourd'hui c'est le premier arrivé, ce devrait être une priorité (dernier
+  locuteur, ou celui qui appelle le jeu). Prérequis manquant : aucun signal
+  ne distingue un callout d'une discussion.
+
+**À décider après mesure**
+- [ ] Endpointing par locuteur. **Correction importante** : je pensais que
+  l'étiquetage (voiceprint matching, section suivante) et l'endpointing par
+  locuteur étaient deux chantiers distincts, le second exigeant une
+  diarisation complète. C'est faux. L'embedding calculé pour dire « qui a
+  parlé » est **le même signal** qui détecte un changement de locuteur. Un
+  seul passage sur le flux mélangé produit les deux, il suffit d'un seuil.
+  Pas de séparation de sources nécessaire. Chantier bien plus petit que les
+  « plusieurs semaines » initialement estimées.
+- [ ] **À grouper avec le voiceprint matching** : même calcul, deux usages.
+  Les traiter séparément serait du travail en double.
+
+## 5. Voice Profiles & équipe
+- [ ] Reconnaissance vocale du joueur (voiceprint matching) — **à traiter
+  avec l'endpointing par locuteur ci-dessus, même embedding**
 - [ ] Profil vocal par contact, icônes/couleurs par joueur
 - [ ] Log "qui a dit quoi" exportable
 - [ ] Mode Squad Sync
 - [ ] Partage de presets entre amis
 
-## 4. TTS & Soundboard
+## 6. TTS & Soundboard
 - [ ] TTS thématiques par jeu
 - [ ] Soundboard intégrée (sons custom, hotkeys)
 - [ ] Banque de sons communautaire
 - [ ] TTS personnalisé (pitch, speed, modèle vocal)
 - [ ] Voice changer léger temps réel
 
-## 5. Intégrations Discord
+## 7. Intégrations Discord
 - [ ] Rich Presence (jeu détecté, preset actif, langue)
 - [ ] Bot slash commands (/stats, /preset, /langue)
 - [ ] Webhooks sortants (état session → serveur Discord custom)
@@ -181,7 +304,10 @@ Prochaine étape : lancer la V5.4
 - Stratégie documentée si Deepgram / Supabase tombent
 - Fallback fonctionnel, messages UI, retry policy, mode offline partiel
 
-## 2. i18n de l'UI — FR + EN minimum
+## 2. i18n de l'UI — FR + EN ✅ fait en V5.3.1
+Application, guides, télécommande mobile et site Kommz Voice couverts.
+Reste : les toasts et messages dynamiques, et 28 états de modules qui
+interpolent des valeurs (à traiter côté backend via `CURRENT_UI_LANG`).
 
 ## 3. RGPD / Privacy
 - Politique de confidentialité, consentement, rétention, droit suppression/export
@@ -206,6 +332,7 @@ Prochaine étape : lancer la V5.4
 - **V5.1** : stabilité / longue session / QA
 - **V5.2** : polish / UX / builds / support
 - **V5.3** : intelligence audio + refactoring Flask (24 routes, 13 blueprints) + 4 bugs critiques résolus
+- **V5.3.1** : interface, i18n FR/EN complète, mise à jour réparée, journal d'usage
 
 ## En cours
 - **V5.4** : social / streaming / multijoueur / intégrations Discord
@@ -241,7 +368,7 @@ Prochaine étape : lancer la V5.4
 
 Projet : **Kommz Gamer**
 État : **V5.4 en cours**
-Terminé : **V5.1, V5.2, V5.3** (refactoring Flask complet + 4 bugs critiques résolus)
+Terminé : **V5.1, V5.2, V5.3, V5.3.1** (refactoring Flask complet, puis interface reprise, i18n complète, mise à jour réparée, journal d'usage)
 Focus actuel : **streaming, overlay OBS, multilingue, équipe, soundboard, intégrations Discord**
 À finaliser avant V5.5 : **fallback cloud, i18n UI, RGPD, tests unitaires**
 Contraintes : **préserver Community/Private, continuer l'existant, livrer du concret**

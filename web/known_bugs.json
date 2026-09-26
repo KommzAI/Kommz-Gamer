@@ -1,0 +1,52 @@
+[
+  {
+    "id": "KB001",
+    "title": "Double session ecoute au demarrage",
+    "severity": "medium",
+    "status": "investigating",
+    "symptom": "Deux streams Deepgram actifs simultanement, transcription doublee",
+    "workaround": "Desactiver listen_startup_kick_enabled dans la config ou cliquer Stop puis Play",
+    "affected_versions": ["V5.1", "V5.2"],
+    "fixed_in": null
+  },
+  {
+    "id": "KB002",
+    "title": "TTS Edge bloque sur certaines phrases longues",
+    "severity": "low",
+    "status": "known",
+    "symptom": "Le TTS Edge TTS saute ou coupe les phrases de plus de 200 caracteres",
+    "workaround": "Activer le splitting de phrases dans Voice Studio ou utiliser Kommz Voice",
+    "affected_versions": ["V5.1", "V5.2"],
+    "fixed_in": null
+  },
+  {
+    "id": "KB003",
+    "title": "VB-Cable non detecte apres mise en veille",
+    "severity": "medium",
+    "status": "known",
+    "symptom": "Apres une mise en veille Windows, le cable virtuel n'est plus detecte",
+    "workaround": "Redemarrer l'application ou reinitialiser le peripherique audio dans les parametres",
+    "affected_versions": ["V5.0", "V5.1", "V5.2"],
+    "fixed_in": null
+  },
+  {
+    "id": "KB004",
+    "title": "Fuite memoire ecoute longue session (>6h)",
+    "severity": "low",
+    "status": "investigating",
+    "symptom": "RAM augmente progressivement apres 6h+ d'ecoute continue",
+    "workaround": "Activer l'auto-pause ecoute si silence (V5.2) ou redemarrer toutes les 4-5h",
+    "affected_versions": ["V5.1", "V5.2"],
+    "fixed_in": null
+  },
+  {
+    "id": "KB005",
+    "title": "Deepgram erreur 429 rate limit",
+    "severity": "medium",
+    "status": "known",
+    "symptom": "Erreur HTTP 429 de Deepgram apres changement rapide de preset",
+    "workaround": "Attendre 30 secondes entre les changements de preset ou utiliser une cle API avec quota plus eleve",
+    "affected_versions": ["V5.0", "V5.1", "V5.2"],
+    "fixed_in": null
+  }
+]

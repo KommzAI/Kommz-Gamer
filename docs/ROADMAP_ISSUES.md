@@ -1,8 +1,8 @@
 # Issues suggérées (copier/coller)
 
-Ce fichier transforme `docs/ROADMAP.md` en **tickets GitHub** faciles à créer.
+Ce fichier transforme `ROADMAP.md` en **tickets GitHub** faciles à créer.
 
-## Option A (simple) : 1 seule issue “Roadmap”
+## Option A (simple) : 1 seule issue "Roadmap"
 
 **Titre** : `Roadmap (P0 / P1 / P2)`
 
@@ -13,17 +13,17 @@ Ce fichier transforme `docs/ROADMAP.md` en **tickets GitHub** faciles à créer.
 ### P0 (bloquant / stabilité)
 - [ ] **[P0] STT Whisper : unifier les endpoints et supprimer les 404**
   Objectif : aligner les routes STT (ex. `/transcribe`) entre serveur et clients.
-  Résultat attendu : plus de 404 côté client, messages d’erreur clairs.
-  DoD : endpoints documentés dans le README ; compat client (ancienne route → alias/redirection si applicable) ; tests smoke (local) + note release.
+  Résultat attendu : plus de 404 côté client, messages d'erreur clairs.
+  DoD : endpoints documentés dans le README ; compat client (ancienne route -> alias/redirection si applicable) ; tests smoke (local) + note release.
 
 - [ ] **[P0] Healthchecks STT/TTS (status + latence)**
   DoD : endpoint(s) de santé (dispo moteurs, latence, version) ; utilisé par le client pour afficher ready/warm/cold/down.
 
-- [ ] **[P0] Fallback STT déterministe (Whisper → Deepgram) + message UI**
+- [ ] **[P0] Fallback STT déterministe (Whisper -> Deepgram) + message UI**
   DoD : fallback stable sans boucle ; retour API explicite (`fallback_used=true` + raison) + message UI.
 
-- [ ] **[P0] STT streaming : keepalive + gestion “no-audio” (Deepgram 1011)**
-  DoD : éviter les timeouts “no audio” (silence long / pause) ; keepalive/heartbeat ; backoff + reconnexion propre.
+- [ ] **[P0] STT streaming : keepalive + gestion "no-audio" (Deepgram 1011)**
+  DoD : éviter les timeouts "no audio" (silence long / pause) ; keepalive/heartbeat ; backoff + reconnexion propre.
 
 ### P1 (améliorations importantes)
 - [ ] **[P1] API keys + quotas (voice id / synthèse) côté serveur**
@@ -37,5 +37,4 @@ Ce fichier transforme `docs/ROADMAP.md` en **tickets GitHub** faciles à créer.
 
 ### P2 (docs / infra)
 - [ ] **[P2] Docs : setup dev simplifié (Docker compose optionnel)**
-  DoD : guide démarrage reproductible ; séparation “local dev” vs “cloud/Modal”.
-
+  DoD : guide démarrage reproductible ; séparation "local dev" vs "cloud/Modal".
