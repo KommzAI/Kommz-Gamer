@@ -2,6 +2,52 @@
 
 [Français](CHANGELOG.md) | [English](CHANGELOG.en.md)
 
+## Kommz Gamer 5.4 - 2026-10-05
+
+### Highlights
+- From this version on, the "Update" button installs new versions, with progress shown until the end.
+- The app starts about three times faster, after the first launch of a new version.
+- Listen Mode: translation goes to the language of your choice (12 languages), not only French.
+- Listen Mode: French and 9 other languages are now recognized correctly, whatever your target language.
+- The cloned voice stays ready during the game, even after several minutes of silence.
+- Your keys and settings can no longer be reached from the local network or from a website open in your browser.
+- A warning is shown if the update file cannot be verified.
+- The "server ready" light no longer turns on when waking up the server failed.
+
+### Listen Mode
+- New "Translate to" menu in the Listen Mode quick settings, with 12 languages: French, English, Spanish, German, Italian, Portuguese, Russian, Polish, Turkish, Japanese, Chinese and Korean. "Auto" (default) follows the interface language.
+- The reading voice now speaks the chosen translation language instead of always speaking French.
+- New speech recognition model: French, English, Spanish, German, Italian, Portuguese, Russian, Japanese, Dutch and Hindi are recognized in the same session, and each sentence is recognized in its actual language.
+- Recognition no longer depends on the target language set in the Artificial Intelligence tab: with a French target, an English teammate is now understood.
+- Better recognition of gaming and streaming vocabulary (Steam, Twitch, Discord, game names, etc.).
+- A sentence already in your translation language is shown as recognized, without going through translation: more faithful text and less translation quota used. When the language is uncertain, the sentence is translated as before.
+- Speculative translation is now off by default: it used about five times more translation calls for a gain that was not noticeable.
+- Listen Mode can be turned off and on again without restarting the app.
+- Gaming terms no longer distort ordinary words that contain them (for example "result" or "default").
+- Tip: if recognition makes up words on a clear voice (video, voice chat), try setting Voice Focus to Off.
+
+### Cloned voice and performance
+- The voice server now wakes up in about 6 seconds instead of nearly 2 minutes, and the first cloned sentence comes out much sooner.
+- The voice server is kept awake during a game, so a sentence after a long silence no longer pays the wake-up time.
+- The "server ready" light only turns on after a successful wake-up, and a failed wake-up is retried after a few seconds.
+- Faster startup: the app is unpacked once per version and reused on later launches. The first launch of a new version takes longer.
+
+### Updates
+- Coming from 5.3.1, moving to 5.4 is a one-time manual step: download 5.4 and run it, your settings are kept. The "Update" button in 5.3.1 cannot install a new version.
+- The "Update" button downloads, verifies and installs the new version, then restarts the app with your settings kept.
+- Progress is shown step by step (download, verification, installation) in the interface language.
+- A warning is shown if the update cannot be verified.
+
+### Settings
+- Corrected default settings now also reach existing installations (for example, automatic updates are turned back on). Your own settings are kept.
+- Settings are always saved in your user profile, never in the template file shipped with the app.
+- The version number shown in the interface always matches the running version.
+
+### Security
+- Your keys and settings are only available to the app itself: other devices on the local network can only use the mobile remote, the overlay and the subtitles.
+- Websites open in your browser can no longer talk to the app.
+- Strengthened security of the voice servers.
+
 ## Kommz Gamer 5.3 - 2026-08-05
 
 ### Audio and real-time pipeline
