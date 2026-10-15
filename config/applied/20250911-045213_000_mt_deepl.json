@@ -1,9 +1,0 @@
-{
-  "mod": "mt_deepl",
-  "data": {
-    "autostart": true,
-    "auth_key": "245e8926-1159-4c77-bb33-8e5a92fe073f:fx",
-    "tier": "free",
-    "formality": "default"
-  }
-}

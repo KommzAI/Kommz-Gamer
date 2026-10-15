@@ -9,7 +9,7 @@
     "enable": "/api/mod/mt_deepl/enable"
   },
   "defaultConfig": {
-    "auth_key": "245e8926-1159-4c77-bb33-8e5a92fe073f:fx",
+    "auth_key": "",
     "tier": "free",
     "formality": "default"
   },

@@ -9,7 +9,7 @@
     "enable": "/api/mod/mt_google/enable"
   },
   "defaultConfig": {
-    "api_key": "AIzaSyAIX45qS8EbG58ORhSD35vWEYA--c-MH2w",
+    "api_key": "",
     "project": "Gemini API",
     "location": "global"
   },
