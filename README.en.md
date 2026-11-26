@@ -1,13 +1,13 @@
 # Kommz Gamer Community
 
-[Français](README.md) | [English](README.en.md)
+[Français](README.fr.md) | [English](README.en.md)
 
 > **Community Edition**  
 > Open-source desktop core for self-hosted usage, customization, and contributions.
 
 ![Community Edition](https://img.shields.io/badge/Edition-Community-2563eb?style=for-the-badge)
 ![License AGPLv3](https://img.shields.io/badge/License-AGPLv3-16a34a?style=for-the-badge)
-[![GitHub Release](https://img.shields.io/github/v/release/Kommz-Gamer/Kommz-Gamer?style=for-the-badge)](https://github.com/Kommz-Gamer/Kommz-Gamer/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/KommzAI/Kommz-Gamer?style=for-the-badge)](https://github.com/KommzAI/Kommz-Gamer/releases)
 [![Discord](https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/uv25d6uGKZ)
 [![Patreon](https://img.shields.io/badge/Support-Patreon-f96854?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/KommzInnovations)
 
@@ -15,15 +15,15 @@ Kommz Gamer Community is the open-source edition of Kommz Gamer, a real-time voi
 The speech engine layer is carried by the separate `Kommz Voice` brick (XTTS + GPT-SoVITS backend flows).
 
 ## Start here
-- Latest releases: https://github.com/Kommz-Gamer/Kommz-Gamer/releases
-- Kommz Voice engine repo: https://github.com/Kommz-Gamer/Kommz-Voice
+- Latest releases: https://github.com/KommzAI/Kommz-Gamer/releases
+- Kommz Voice engine repo: https://github.com/KommzAI/Kommz-Voice
 - Join the community: https://discord.gg/uv25d6uGKZ
 - Support the project: https://www.patreon.com/KommzInnovations
 - Official website: https://kommz.fr
 
 ## Community and support
 - GitHub: source code, issues, releases, contributions
-- Kommz Voice: dedicated backend engine layer (XTTS + GPT-SoVITS) -> https://github.com/Kommz-Gamer/Kommz-Voice
+- Kommz Voice: dedicated backend engine layer (XTTS + GPT-SoVITS) -> https://github.com/KommzAI/Kommz-Voice
 - Discord: help, feedback, roadmap, community discussions
 - Patreon: support, early access context, project sustainability
 
@@ -56,7 +56,7 @@ The speech engine layer is carried by the separate `Kommz Voice` brick (XTTS + G
 This repo is designed for transparency and extensibility. The supported offering is designed for teams who prefer speed, reliability, and managed operations.
 
 ## Quick start
-> ⚠️ **Prerequisite:** Kommz Gamer Community depends on the **Kommz Voice** speech engine layer. Clone and configure that repo alongside this one before launching the app: https://github.com/Kommz-Gamer/Kommz-Voice
+> ⚠️ **Prerequisite:** Kommz Gamer Community depends on the **Kommz Voice** speech engine layer. Clone and configure that repo alongside this one before launching the app: https://github.com/KommzAI/Kommz-Voice
 
 1. Copy `.env.example` to `.env` and fill in the values you want to use.
 2. Copy `settings.example.json` to `settings.json` if you need a local baseline config.

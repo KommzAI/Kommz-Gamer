@@ -1,13 +1,13 @@
 ﻿# Kommz Gamer Community
 
-[Français](README.md) | [English](README.en.md)
+[Français](README.fr.md) | [English](README.md)
 
 > **Édition Community**  
 > Noyau desktop open source, auto-hébergeable, conçu pour la personnalisation et les contributions.
 
 ![Community Edition](https://img.shields.io/badge/Edition-Community-2563eb?style=for-the-badge)
 ![License AGPLv3](https://img.shields.io/badge/License-AGPLv3-16a34a?style=for-the-badge)
-[![GitHub Release](https://img.shields.io/github/v/release/Kommz-Gamer/Kommz-Gamer?style=for-the-badge)](https://github.com/Kommz-Gamer/Kommz-Gamer/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/KommzAI/Kommz-Gamer?style=for-the-badge)](https://github.com/KommzAI/Kommz-Gamer/releases)
 [![Discord](https://img.shields.io/badge/Discord-Communaute-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/uv25d6uGKZ)
 [![Patreon](https://img.shields.io/badge/Soutenir-Patreon-f96854?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/KommzInnovations)
 
@@ -15,7 +15,7 @@ Kommz Gamer Community est l’édition open source de Kommz Gamer, une applicati
 La couche moteur vocale est portée par une brique séparée: `Kommz Voice` (XTTS + GPT-SoVITS).
 
 ## Commencer ici
-- Dernieres releases: https://github.com/Kommz-Gamer/Kommz-Gamer/releases
+- Dernieres releases: https://github.com/KommzAI/Kommz-Gamer/releases
 - Rejoindre la communaute: https://discord.gg/uv25d6uGKZ
 - Soutenir le projet: https://www.patreon.com/KommzInnovations
 - Site officiel: https://kommz.fr
