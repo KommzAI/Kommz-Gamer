@@ -1,8 +1,0 @@
-{
-  "mod": "mt_deepl",
-  "data": {
-    "autostart": true,
-    "source": "fr",
-    "target": "en"
-  }
-}

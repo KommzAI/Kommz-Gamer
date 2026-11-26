@@ -1,8 +1,0 @@
-[
-  {
-    "mod": "integration_discord",
-    "data": {
-      "autostart": true
-    }
-  }
-]

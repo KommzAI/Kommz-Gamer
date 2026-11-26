@@ -1,9 +1,0 @@
-[
-  {
-    "mod": "util_sync",
-    "data": {
-      "autostart": true,
-      "comms": "phantom"
-    }
-  }
-]

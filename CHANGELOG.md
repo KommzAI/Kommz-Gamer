@@ -2,6 +2,52 @@
 
 [Français](CHANGELOG.md) | [English](CHANGELOG.en.md)
 
+## Kommz Gamer 5.4 - 2026-10-05
+
+### Points forts
+- À partir de cette version, le bouton « Mettre à jour » installe les nouvelles versions, avec la progression affichée jusqu'au bout.
+- Le logiciel démarre environ trois fois plus vite, après le premier lancement d'une nouvelle version.
+- Mode Écoute : la traduction se fait dans la langue de votre choix (12 langues), et plus seulement en français.
+- Mode Écoute : le français et 9 autres langues sont reconnus correctement, quelle que soit votre langue cible.
+- La voix clonée reste prête pendant la partie, même après plusieurs minutes de silence.
+- Vos clés et vos réglages ne sont plus accessibles depuis le réseau local ni depuis un site web ouvert dans votre navigateur.
+- Un avertissement s'affiche si le fichier de mise à jour ne peut pas être vérifié.
+- Le voyant « serveur prêt » ne s'allume plus quand le réveil du serveur a échoué.
+
+### Mode Écoute
+- Nouveau menu « Traduire en » dans les réglages rapides du Mode Écoute, avec 12 langues : français, anglais, espagnol, allemand, italien, portugais, russe, polonais, turc, japonais, chinois et coréen. « Auto » (par défaut) suit la langue de l'interface.
+- La voix de lecture parle la langue de traduction choisie, au lieu de toujours parler français.
+- Nouveau modèle de reconnaissance vocale : le français, l'anglais, l'espagnol, l'allemand, l'italien, le portugais, le russe, le japonais, le néerlandais et l'hindi sont reconnus dans une même session, et chaque phrase est reconnue dans sa langue réelle.
+- La reconnaissance ne dépend plus de la langue cible réglée dans l'onglet Intelligence Artificielle : avec une cible en français, un coéquipier anglophone est maintenant compris.
+- Meilleure reconnaissance du vocabulaire du jeu et du streaming (Steam, Twitch, Discord, noms de jeux, etc.).
+- Une phrase déjà dans votre langue de traduction est affichée telle que reconnue, sans passer par la traduction : texte plus fidèle et quota de traduction économisé. Si la langue est incertaine, la phrase est traduite comme avant.
+- La traduction anticipée est désactivée par défaut : elle consommait environ cinq fois plus d'appels de traduction pour un gain imperceptible.
+- Le Mode Écoute peut être désactivé puis réactivé sans redémarrer le logiciel.
+- Les termes de jeu ne déforment plus les mots ordinaires qui les contiennent (par exemple « résultat » ou « culture »).
+- Conseil : si la reconnaissance invente des mots sur une voix claire (vidéo, chat vocal), essayez Voice Focus sur Off.
+
+### Voix clonée et performances
+- Le serveur de voix se réveille en 6 secondes environ au lieu de près de 2 minutes, et la première phrase en voix clonée part bien plus vite.
+- Le serveur de voix est maintenu éveillé pendant une partie : une phrase après un long silence ne paie plus le temps de réveil.
+- Le voyant « serveur prêt » ne s'allume qu'après un réveil réussi, et un réveil raté est retenté au bout de quelques secondes.
+- Démarrage plus rapide : le logiciel est décompressé une seule fois par version, puis réutilisé aux lancements suivants. Le premier lancement d'une nouvelle version reste plus long.
+
+### Mises à jour
+- Depuis la 5.3.1, le passage à la 5.4 se fait une seule fois à la main : téléchargez la 5.4 et lancez-la, vos réglages sont conservés. Le bouton « Mettre à jour » de la 5.3.1 ne peut pas installer de nouvelle version.
+- Le bouton « Mettre à jour » télécharge, vérifie et installe la nouvelle version, puis redémarre le logiciel en conservant vos réglages.
+- La progression s'affiche étape par étape (téléchargement, vérification, installation), dans la langue de l'interface.
+- Un avertissement s'affiche si la mise à jour ne peut pas être vérifiée.
+
+### Réglages
+- Les réglages par défaut corrigés atteignent aussi les installations existantes (par exemple, la mise à jour automatique est réactivée). Vos propres réglages sont conservés.
+- Les réglages sont toujours enregistrés dans votre profil utilisateur, jamais dans le fichier modèle livré avec le logiciel.
+- Le numéro de version affiché dans l'interface correspond toujours à la version qui tourne.
+
+### Sécurité
+- Vos clés et vos réglages ne sont accessibles qu'au logiciel lui-même : les autres appareils du réseau local ne peuvent utiliser que la télécommande mobile, l'overlay et les sous-titres.
+- Les sites web ouverts dans votre navigateur ne peuvent plus communiquer avec le logiciel.
+- Sécurité des serveurs de voix renforcée.
+
 ## Kommz Gamer 5.3 - 2026-08-05
 
 ### Audio et pipeline temps reel

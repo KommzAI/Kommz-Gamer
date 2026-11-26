@@ -1309,7 +1309,7 @@ function tr(frText) {
   <!-- HUD géré exclusivement par hud_floatant.html via pywebview -->
 
   <aside>
-      <div class="logo">KOMMZ <span class="ver">V5.3.1</span></div>
+      <div class="logo">KOMMZ <span class="ver app-ver">V5.4.0</span></div>
     
     <div class="nav-group" data-fr="Essentiel" data-en="Essentials">Essentiel</div>
     
@@ -1329,10 +1329,10 @@ function tr(frText) {
     <div class="nav-btn" onclick="showTab('tab-schedule')" data-i18n="nav_schedule">Planning</div>
 
     <div style="margin-top: auto; font-size: 11px; color: var(--muted); text-align: center;">
-           Community Edition<br>Build V5.3.1<br>
+           Community Edition<br>Build <span class="app-ver">V5.4.0</span><br>
           <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px;">
             <a href="https://discord.gg/kommz-gamer" target="_blank" rel="noopener noreferrer" style="color:#5865f2; text-decoration:none; font-size:11px; display:flex; align-items:center; gap:6px; justify-content:center;">Discord</a>
-            <a href="https://github.com/Kommz-Gamer/Kommz-Gamer/issues" target="_blank" rel="noopener noreferrer" style="color:#8b949e; text-decoration:none; font-size:11px; display:flex; align-items:center; gap:6px; justify-content:center;">GitHub</a>
+            <a href="https://github.com/KommzAI/Kommz-Gamer/issues" target="_blank" rel="noopener noreferrer" style="color:#8b949e; text-decoration:none; font-size:11px; display:flex; align-items:center; gap:6px; justify-content:center;">GitHub</a>
             <a href="https://patreon.com/KommzInnovations" target="_blank" rel="noopener noreferrer" style="color:var(--err); text-decoration:none; font-size:11px; display:flex; align-items:center; gap:6px; justify-content:center;">Patreon</a>
           </div>
           <!-- V5.2: Dark mode OLED toggle -->
@@ -1586,6 +1586,24 @@ function tr(frText) {
                             <option value="aggressive">Agressif</option>
                             <option value="auto">Auto (V5.2)</option>
                             <option value="v3">V3 Adaptatif (V5.3)</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:11px; color:var(--muted); min-width:80px;" data-fr="Traduire en" data-en="Translate to">Traduire en</span>
+                        <select id="selListenTranslateLang" class="compact-select" style="flex:0 1 200px; width:200px; min-width:160px; max-width:200px;">
+                            <option value="auto" data-fr="Auto (langue de l'interface)" data-en="Auto (interface language)">Auto (langue de l'interface)</option>
+                            <option value="fr">Français</option>
+                            <option value="en">English</option>
+                            <option value="es">Español</option>
+                            <option value="de">Deutsch</option>
+                            <option value="it">Italiano</option>
+                            <option value="pt">Português</option>
+                            <option value="ru">Русский</option>
+                            <option value="pl">Polski</option>
+                            <option value="tr">Türkçe</option>
+                            <option value="ja">日本語</option>
+                            <option value="zh">中文</option>
+                            <option value="ko">한국어</option>
                         </select>
                     </div>
                     <div id="v3CalibrationPanel" style="display:none; padding:8px; border:1px solid rgba(139,92,246,0.25); border-radius:8px; background:rgba(139,92,246,0.06); margin-top:4px;">
@@ -2696,7 +2714,7 @@ function tr(frText) {
         </div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px;">
           <button class="btn-secondary" type="button" style="min-width:140px; padding:8px 14px; background:#5865f2; border-color:#5865f2; color:var(--text);" onclick="window.open('https://discord.gg/kommzgamer','_blank')"><span data-fr="Discord" data-en="Discord">Discord</span></button>
-          <button class="btn-secondary" type="button" style="min-width:140px; padding:8px 14px; background:var(--border); border-color:var(--dim); color:var(--text);" onclick="window.open('https://github.com/Kommz-Gamer/Kommz-Gamer/issues/new?template=feedback.md','_blank')"><span data-fr="GitHub Feedback" data-en="GitHub Feedback">GitHub Feedback</span></button>
+          <button class="btn-secondary" type="button" style="min-width:140px; padding:8px 14px; background:var(--border); border-color:var(--dim); color:var(--text);" onclick="window.open('https://github.com/KommzAI/Kommz-Gamer/issues/new?template=feedback.md','_blank')"><span data-fr="GitHub Feedback" data-en="GitHub Feedback">GitHub Feedback</span></button>
           <button class="btn-secondary" type="button" style="min-width:140px; padding:8px 14px; background:var(--warn); border-color:var(--warn); color:var(--text);" onclick="window.open('https://patreon.com/kommzgamer','_blank')"><span data-fr="Patreon" data-en="Patreon">Patreon</span></button>
         </div>
       </div>
@@ -2898,7 +2916,7 @@ function tr(frText) {
 
   <div id="startupOverlay" class="startup-overlay">
     <div class="startup-card">
-      <div class="startup-title">KOMMZ GAMER V5.3.1 · Initialisation</div>
+      <div class="startup-title">KOMMZ GAMER <span class="app-ver">V5.4.0</span> · Initialisation</div>
       <div class="startup-sub"><span data-fr="Chargement sécurisé du moteur, audio, licences et modules." data-en="Secure loading of engine, audio, licenses and modules.">Chargement sécurisé du moteur, audio, licences et modules.</span></div>
       <div class="startup-progress"><div id="startupBar" class="startup-bar"></div></div>
       <div id="startupLog" class="startup-log">Boot sequence...</div>
@@ -2917,7 +2935,7 @@ function tr(frText) {
         <input class="gate-input gate-input-voice" type="text" id="gateVoiceKey" placeholder="🎙️ Voice Key (VCV-...)">
         <button class="primary" id="gateBtnActivateVoice"><span data-fr="ACTIVER VOICE" data-en="ACTIVATE VOICE">ACTIVER VOICE</span></button>
       </div>
-      <div id="gateStatus" style="margin-top:10px;color:var(--muted);font-size:12px;"><span data-fr="En attente d\'activation..." data-en="Waiting for activation...">En attente d\'activation...</span></div>
+      <div id="gateStatus" style="margin-top:10px;color:var(--muted);font-size:12px;"><span data-fr="En attente d'activation..." data-en="Waiting for activation...">En attente d'activation...</span></div>
     </div>
   </div>
 
@@ -3091,6 +3109,11 @@ function tr(frText) {
         const focusLabel = (focus === 'auto')
             ? `voice-focus auto (${focusEffective})`
             : (focus === 'v3' ? 'voice-focus V3 adaptatif' : (focus === 'aggressive' ? 'voice-focus agressif' : (focus === 'balanced' ? 'voice-focus normal' : 'voice-focus off')));
+        const selTranslate = qs('#selListenTranslateLang');
+        if (selTranslate && document.activeElement !== selTranslate && data?.listen_translate_lang) {
+            const tl = String(data.listen_translate_lang).trim().toLowerCase();
+            if (Array.from(selTranslate.options).some(o => o.value === tl)) selTranslate.value = tl;
+        }
         const selFocus = qs('#selListenVoiceFocus');
         if (selFocus && document.activeElement !== selFocus) {
             if (['off', 'balanced', 'aggressive', 'auto', 'v3'].includes(focus)) {
@@ -5831,6 +5854,14 @@ function tr(frText) {
 
                 // État du Mode Écoute
                 const dotListen = qs('#dot-listen');
+                // Version affichee : celle du programme qui tourne, pour ne
+                // plus dependre d'un numero ecrit en dur dans cette page.
+                if (d.current_version) {
+                    const verTxt = 'V' + String(d.current_version);
+                    document.querySelectorAll('.app-ver').forEach(el => {
+                        if (el.textContent !== verTxt) el.textContent = verTxt;
+                    });
+                }
                 const listenOn = !!d.is_listening;
                 const lsEl = qs('#listenStatusText');
                 dotListen.className = listenOn ? 'dot active' : 'dot';
@@ -5899,6 +5930,66 @@ function tr(frText) {
         }
     }
 
+    // --- AIDE CABLE AUDIO VIRTUEL ---
+    // Pour que le jeu entende la voix traduite, il faut un cable audio virtuel (VB-Cable). Si aucun
+    // n'est dans la liste des sorties, on l'indique une fois, sans bloquer : le mode ecoute
+    // (sous-titres) n'en a pas besoin. Cree apres applyLang() : le texte est choisi ici.
+    function showCableHintIfNeeded(outputDevices) {
+        try {
+            if (localStorage.getItem('kommz_cable_hint_dismissed') === '1') return;
+            if (document.getElementById('cableHint')) return;
+            const names = (outputDevices || []).map(d => String((d && d.name) || ''));
+            if (names.length === 0) return;   // liste vide : probleme de peripheriques, pas de cable
+            if (names.some(n => /cable|vb-audio|voicemeeter/i.test(n))) return;
+            // Attendre la fin de l'ecran de demarrage, sinon l'aide s'afficherait par-dessus.
+            const splash = document.getElementById('startupOverlay');
+            if (splash && !splash.classList.contains('hidden')) {
+                if ((showCableHintIfNeeded._tries = (showCableHintIfNeeded._tries || 0) + 1) <= 60) {
+                    setTimeout(() => showCableHintIfNeeded(outputDevices), 500);
+                }
+                return;
+            }
+            const en = currentLang === 'en';
+            const box = document.createElement('div');
+            box.id = 'cableHint';
+            box.setAttribute('role', 'status');
+            box.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:20500;max-width:340px;padding:14px 16px;'
+                + 'background:#13131a;color:#e2e8f0;border:1px solid #3b5bff;border-radius:10px;'
+                + 'box-shadow:0 8px 28px rgba(0,0,0,.5);font:13px/1.45 system-ui,sans-serif;';
+            const title = document.createElement('div');
+            title.style.cssText = 'font-weight:700;margin-bottom:6px;';
+            title.textContent = en ? 'Virtual audio cable not detected' : 'Câble audio virtuel non détecté';
+            const text = document.createElement('div');
+            text.style.cssText = 'margin-bottom:10px;opacity:.9;';
+            text.textContent = en
+                ? 'For the game to hear your translated voice, install VB-Cable (free). Listen mode (subtitles) works without it.'
+                : 'Pour que le jeu entende votre voix traduite, installez VB-Cable (gratuit). Le mode écoute (sous-titres) fonctionne sans.';
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;';
+            const mk = (label, primary, onClick) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.style.cssText = 'cursor:pointer;border-radius:6px;padding:6px 10px;font:inherit;border:1px solid #3b5bff;'
+                    + (primary ? 'background:#3b5bff;color:#fff;' : 'background:transparent;color:#e2e8f0;');
+                b.addEventListener('click', onClick);
+                return b;
+            };
+            row.appendChild(mk(en ? 'Open the install guide' : "Voir le guide d'installation", true, () => {
+                try { openGuide('general'); } catch (e) {}
+            }));
+            row.appendChild(mk(en ? 'Later' : 'Plus tard', false, () => box.remove()));
+            row.appendChild(mk(en ? "Don't show again" : 'Ne plus afficher', false, () => {
+                try { localStorage.setItem('kommz_cable_hint_dismissed', '1'); } catch (e) {}
+                box.remove();
+            }));
+            box.appendChild(title);
+            box.appendChild(text);
+            box.appendChild(row);
+            document.body.appendChild(box);
+        } catch (e) { /* aide facultative : ne jamais gener le demarrage */ }
+    }
+
     // --- INIT ---
     async function init() {
         try {
@@ -5914,6 +6005,7 @@ function tr(frText) {
             };
             fill(qs('#selGameOutput'), d.output_devices);
             fill(qs('#selGameInput'), d.input_devices);
+            showCableHintIfNeeded(d.output_devices);
 
             // Sync immédiate des valeurs sauvegardées
             try {
@@ -6632,6 +6724,30 @@ function tr(frText) {
                     btnBugCopyAllDiscord.disabled = false;
                     btnBugCopyAllDiscord.textContent = tr('📋 Copy All Discord');
                     showToast(tr('❌ Erreur Copy All'));
+                }
+            };
+        }
+
+        const selListenTranslateLang = qs('#selListenTranslateLang');
+        if (selListenTranslateLang) {
+            selListenTranslateLang.onchange = async () => {
+                const lang = String(selListenTranslateLang.value || 'auto').toLowerCase();
+                try {
+                    const r = await fetch(CORE_URL + '/audio/listen/translate_lang', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lang })
+                    });
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok || !d.ok) {
+                        showToast(currentLang === 'en' ? '❌ Translation language unavailable' : '❌ Langue de traduction indisponible');
+                        return;
+                    }
+                    const label = selListenTranslateLang.options[selListenTranslateLang.selectedIndex]?.textContent || lang;
+                    showToast((currentLang === 'en' ? '🌐 Teammates translated to: ' : '🌐 Coéquipiers traduits en : ') + label);
+                    lastModClickTime = 0;
+                } catch (e) {
+                    showToast(currentLang === 'en' ? '❌ Translation language unavailable' : '❌ Langue de traduction indisponible');
                 }
             };
         }

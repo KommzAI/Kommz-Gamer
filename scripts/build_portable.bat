@@ -49,7 +49,7 @@ echo.
 echo Aucune installation requise.
 echo Double-cliquez sur vtp_core.exe pour lancer.
 echo.
-echo Support : https://github.com/Kommz-Gamer/Kommz-Gamer
+echo Support : https://github.com/KommzAI/Kommz-Gamer
 echo Discord  : https://discord.gg/kommzgamer
 echo.
 ) > "%ZIP_TEMP%\README_PORTABLE.txt"

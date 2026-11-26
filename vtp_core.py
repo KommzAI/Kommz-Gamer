@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import time as _time_boot
+# Debut du chargement du module : startup.log est vide au debut de main(),
+# on garde l'instant ici pour y ecrire la duree des imports.
+_MODULE_IMPORT_T0 = _time_boot.time()
 import os
 os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
@@ -31,6 +35,15 @@ import ctypes # Pour communiquer avec les bibliothèques Windows
 import json
 import os
 import sys
+
+# Lance comme script, ce fichier s'appelle "__main__". Les modules qui font
+# "import vtp_core" (ecoute, mise a jour, telecommande, scenes, sous-titres)
+# en recevaient alors une seconde copie, rechargee de zero : moteur d'ecoute,
+# sous-titres et etat de mise a jour y etaient vides. On s'enregistre sous
+# son nom pour qu'ils obtiennent le programme qui tourne.
+if __name__ == "__main__":
+    sys.modules.setdefault("vtp_core", sys.modules[__name__])
+
 import subprocess
 import requests
 import webbrowser
@@ -117,6 +130,7 @@ load_local_env_file()
 # ============================================================================
 from modules.config.config import (
     AUDIO_CONFIG,
+    LISTEN_TRANSLATE_LANGS,
     save_settings,
     load_settings,
     EDITION_PROFILE,
@@ -957,8 +971,42 @@ from deepgram import (
 
 DEEPGRAM_AVAILABLE = True
 
-# 🔑 TA CLÉ API
-DEEPGRAM_API_KEY = "e83f74e7893af98d996cdc1b14ab87dd8dc1b6f8"
+# Clé Deepgram : jamais écrite dans le code, car la version Community est
+# publique. Ordre de recherche :
+#   1. le réglage `deepgram_api_key` (clé personnelle de l'utilisateur) ;
+#   2. la variable d'environnement DEEPGRAM_API_KEY ;
+#   3. la clé intégrée au build par final_build.bat, depuis le fichier
+#      `_build_secrets.py` (ignoré par git, absent de la version Community).
+try:
+    from _build_secrets import DEEPGRAM_API_KEY as _BUILD_DEEPGRAM_API_KEY
+except ImportError:
+    _BUILD_DEEPGRAM_API_KEY = ""
+
+_DEEPGRAM_KEY_WARNED = False
+
+
+def get_deepgram_api_key() -> str:
+    for candidate in (
+        AUDIO_CONFIG.get("deepgram_api_key"),
+        os.environ.get("DEEPGRAM_API_KEY"),
+        _BUILD_DEEPGRAM_API_KEY,
+    ):
+        key = str(candidate or "").strip()
+        if key:
+            return key
+    return ""
+
+
+def require_deepgram_api_key() -> str:
+    """Renvoie la clé, ou lève une erreur claire si aucune n'est configurée."""
+    global _DEEPGRAM_KEY_WARNED
+    key = get_deepgram_api_key()
+    if not key:
+        if not _DEEPGRAM_KEY_WARNED:
+            _DEEPGRAM_KEY_WARNED = True
+            stealth_print("⚠️ Clé Deepgram absente : renseignez `deepgram_api_key` dans les réglages ou la variable DEEPGRAM_API_KEY.")
+        raise RuntimeError("Clé Deepgram absente")
+    return key
 
 
 warnings.filterwarnings("ignore", message="data discontinuity in recording")
@@ -1610,14 +1658,27 @@ def normalize_lang_for_voice(lang_code):
         return "ko"
     return "en"
 
+def _listen_translate_target():
+    """Langue cible du Mode Ecoute (code DeepL court, ex. "FR").
+
+    Le reglage "auto" suit la langue de l'interface : un joueur en anglais
+    recoit ses coequipiers en anglais, et plus en francais.
+    """
+    raw = str(AUDIO_CONFIG.get("listen_translate_lang", "auto") or "auto").strip().upper()
+    if raw in LISTEN_TRANSLATE_LANGS:
+        return raw
+    return "EN" if (globals().get("CURRENT_UI_LANG") or "fr") == "en" else "FR"
+
+
 def get_auto_ally_voice(lang_code):
     """Choisit une voix Edge pour l'allié.
-    Par défaut, on force le rendu FR pour rester cohérent avec la traduction affichée.
+    Par défaut, la voix parle la langue de la traduction affichée
+    (ally_force_french_voice garde son nom pour les profils existants).
     """
     gender_key = "F" if app_state.get("gender", "MALE") == "FEMALE" else "M"
     if AUDIO_CONFIG.get("ally_force_french_voice", True):
-        by_lang_fr = EDGE_VOICE_MAP.get("fr", {})
-        forced = by_lang_fr.get(gender_key)
+        by_target = EDGE_VOICE_MAP.get(_listen_translate_target(), {})
+        forced = by_target.get(gender_key)
         if forced:
             return forced
 
@@ -1671,6 +1732,84 @@ def detect_ally_language(text, dg_result=None):
         pass
 
     return "en"
+
+_LINGUA_TO_CODE = {
+    "ENGLISH": "en", "FRENCH": "fr", "SPANISH": "es", "GERMAN": "de",
+    "RUSSIAN": "ru", "PORTUGUESE": "pt",
+}
+
+
+def _ally_text_is_in_lang(text, target, dg_result=None):
+    """True seulement si la phrase est sure d'etre deja dans la langue cible.
+
+    Sert a ne pas envoyer a DeepL une phrase deja dans la bonne langue. Un
+    faux positif laisserait une phrase non traduite : sans certitude, on
+    repond False et la traduction se fait comme avant. Pas de repli "en"
+    par defaut ici, contrairement a detect_ally_language().
+    """
+    want = str(target or "").strip().lower()[:2]
+    if not want or len(str(text or "").split()) < 3:
+        return False
+    # 1) Deepgram : langues des mots (nova-3 multi) ou langue detectee.
+    try:
+        ch = getattr(dg_result, "channel", None) if dg_result is not None else None
+        alts = (getattr(ch, "alternatives", None) or []) if ch is not None else []
+        a0 = alts[0] if alts else None
+        langs = getattr(a0, "languages", None) if a0 is not None else None
+        if langs:
+            codes = {str(l or "").strip().lower()[:2] for l in langs if l}
+            if codes:
+                return codes == {want}
+        for v in (getattr(ch, "detected_language", None), getattr(a0, "detected_language", None)):
+            if v:
+                return str(v).strip().lower()[:2] == want
+    except Exception:
+        pass
+    # 2) Lingua, avec un seuil de confiance : il ne connait que quelques
+    # langues et range une langue inconnue dans la plus proche.
+    try:
+        if detector and text:
+            vals = detector.compute_language_confidence_values(text)
+            if vals:
+                top = vals[0]
+                lang = getattr(top, "language", None) or top[0]
+                conf = getattr(top, "value", None)
+                if conf is None:
+                    conf = top[1]
+                code = ""
+                for k, v in _LINGUA_TO_CODE.items():
+                    if k in str(lang).upper():
+                        code = v
+                        break
+                return code == want and float(conf) >= 0.9
+    except Exception:
+        pass
+    return False
+
+
+# Langues que nova-3 reconnait ensemble en language=multi.
+NOVA3_MULTI_LANGS = {"en", "es", "fr", "de", "hi", "ru", "pt", "ja", "it", "nl"}
+
+
+def _listen_live_lang(lang_cfg, use_loopback):
+    """Langue Deepgram du Mode Ecoute.
+
+    ally_recognition_lang suit la langue cible de la voix du joueur
+    (/config/target). Fixee a "fr", une video ou un coequipier anglais etait
+    transcrit comme du francais, donc rien d'exploitable. Si cette langue fait
+    partie du mode multi de nova-3, on ecoute en "multi" : la langue reelle de
+    chaque phrase est reconnue. Hors de cette liste (coreen, chinois...), la
+    langue fixe reste le meilleur choix.
+    """
+    live_lang = normalize_live_deepgram_lang(lang_cfg)
+    model = str(AUDIO_CONFIG.get("listen_stt_model", "nova-3") or "nova-3").strip().lower()
+    if model != "nova-2" and live_lang in NOVA3_MULTI_LANGS:
+        return "multi"
+    # En loopback (YouTube/son système), en-US capte mal le multilingue.
+    if use_loopback and live_lang in ("en", "english"):
+        return "multi"
+    return live_lang
+
 
 def normalize_live_deepgram_lang(lang_code):
     """Normalise la langue LiveOptions Deepgram vers un code robuste."""
@@ -2131,7 +2270,7 @@ DEFAULT_VOICE_ID = ""
 VTP_CORE_PORT = 8770
 # UPDATE_URL a ete retire : jamais lu. Le point d'entree reel est
 # UPDATE_CHECK_URL, configurable par variable d'environnement.
-APP_BUILD_VERSION = "5.3.1"
+APP_BUILD_VERSION = "5.4.0"
 
 def _load_current_version(default: str = APP_BUILD_VERSION) -> str:
     # In packaged builds, rely on the embedded build version instead of an
@@ -2951,6 +3090,12 @@ def _build_kommz_aux_candidates(target: str, base_url: str = ""):
     for base in _build_kommz_modal_base_candidates(base_url or _resolve_kommz_voice_endpoint()):
         _push(_derive_modal_endpoint(base, target), base)
     return out
+
+
+def _kommz_auth_headers() -> dict:
+    """En-tete d'authentification des routes XTTS (warmup, clone)."""
+    key = str(AUDIO_CONFIG.get("kommz_api_key", "") or "").strip()
+    return {"Authorization": f"Bearer {key}"} if key else {}
 
 
 def _remember_working_kommz_base(working_base: str):
@@ -3872,6 +4017,7 @@ def prewarm_kommz_xtts(force=False, timeout_connect=3, timeout_read=45):
                     try:
                         r = requests.post(
                             warmup_url,
+                            headers=_kommz_auth_headers(),
                             timeout=(timeout_connect, timeout_read),
                         )
                         ok = r.ok
@@ -3908,6 +4054,125 @@ def prewarm_kommz_xtts(force=False, timeout_connect=3, timeout_read=45):
             pass
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Maintien en eveil du serveur XTTS pendant une partie.
+#
+# Sur le chemin voice_id, rien ne rappelait /warmup apres le lancement : au
+# bout de 5 min sans parler, Modal eteignait le GPU et les relais, et la phrase
+# suivante repayait 12 a 16 s de reveil. Ce fil relance un warmup quand le
+# serveur n'a recu aucun appel reussi (warmup ou synthese) depuis
+# xtts_keepalive_interval_s secondes. Il s'arrete xtts_keepalive_idle_stop_s
+# secondes apres la derniere activite vocale et reprend a la phrase suivante.
+#
+# L'activite vocale est suivie a part : un warmup ne doit jamais compter comme
+# activite, sinon le maintien s'entretiendrait lui-meme indefiniment.
+# ---------------------------------------------------------------------------
+_last_voice_activity_ts = 0.0
+_XTTS_KEEPALIVE_STOP = threading.Event()
+_xtts_keepalive_thread = None
+_xtts_keepalive_state = {"active": False, "last_call_ts": 0.0, "reason": "demarrage"}
+
+
+def _mark_xtts_voice_activity(synthesis_ok: bool = False) -> None:
+    """Note une activite vocale ; synthesis_ok signale aussi un appel serveur reussi."""
+    global _last_voice_activity_ts, _last_xtts_activity_ts
+    now = time.time()
+    _last_voice_activity_ts = now
+    if synthesis_ok:
+        _last_xtts_activity_ts = now
+
+
+def _xtts_keepalive_settings():
+    enabled = _to_bool(AUDIO_CONFIG.get("xtts_keepalive_enabled", not COMMUNITY_EDITION), not COMMUNITY_EDITION)
+    try:
+        interval = float(AUDIO_CONFIG.get("xtts_keepalive_interval_s", 240) or 240)
+    except Exception:
+        interval = 240.0
+    try:
+        idle_stop = float(AUDIO_CONFIG.get("xtts_keepalive_idle_stop_s", 900) or 900)
+    except Exception:
+        idle_stop = 900.0
+    return enabled, max(60.0, interval), max(60.0, idle_stop)
+
+
+def _xtts_keepalive_step(now: float) -> None:
+    """Un tour de boucle, isole pour rester testable."""
+    state = _xtts_keepalive_state
+    enabled, interval, idle_stop = _xtts_keepalive_settings()
+
+    reason = ""
+    if not enabled:
+        reason = "desactive dans la configuration"
+    elif AUDIO_CONFIG.get("tts_engine") != "KOMMZ_VOICE":
+        reason = "moteur autre que Kommz Voice"
+    elif not has_voice_license():
+        reason = "licence Voice inactive"
+    else:
+        idle = now - _last_voice_activity_ts
+        if idle > idle_stop:
+            reason = f"aucune activite vocale depuis {idle:.0f} s"
+
+    if reason:
+        if state["active"]:
+            stealth_print(f"[XTTS][keepalive] arret : {reason}")
+        state["active"] = False
+        state["reason"] = reason
+        return
+
+    if not state["active"]:
+        stealth_print("[XTTS][keepalive] actif")
+        state["active"] = True
+        state["reason"] = ""
+        # La phrase qui relance le maintien sollicite deja le serveur : le
+        # premier warmup de maintien attend un intervalle complet.
+        state["last_call_ts"] = now
+
+    # Dernier contact reussi avec le serveur, quel qu'il soit : un warmup ou
+    # une synthese recents suffisent, inutile d'en ajouter un.
+    last_contact = max(_last_xtts_warmup_ok_ts, _last_xtts_activity_ts)
+    if (now - last_contact) < interval:
+        return
+    # Jamais plus d'un appel de maintien par intervalle, meme si les warmups
+    # echouent.
+    if (now - state["last_call_ts"]) < interval:
+        return
+    state["last_call_ts"] = now
+    stealth_print(
+        f"[XTTS][keepalive] warmup de maintien, derniere activite vocale il y a "
+        f"{now - _last_voice_activity_ts:.0f} s, dernier contact serveur il y a "
+        f"{now - last_contact:.0f} s"
+    )
+    prewarm_kommz_xtts(force=False)
+
+
+def start_xtts_keepalive() -> None:
+    global _xtts_keepalive_thread, _last_voice_activity_ts
+    if _xtts_keepalive_thread is not None:
+        return
+    # Lancer le logiciel compte comme une intention de jouer : le maintien
+    # couvre la periode d'inactivite autorisee meme sans phrase.
+    if _last_voice_activity_ts <= 0.0:
+        _last_voice_activity_ts = time.time()
+
+    def _loop():
+        while not _XTTS_KEEPALIVE_STOP.wait(15.0):
+            try:
+                _xtts_keepalive_step(time.time())
+            except Exception as exc:
+                stealth_print(f"[XTTS][keepalive] erreur : {type(exc).__name__}: {exc}")
+        stealth_print("[XTTS][keepalive] arret : fermeture du logiciel")
+
+    _xtts_keepalive_thread = threading.Thread(target=_loop, name="xtts-keepalive", daemon=True)
+    _xtts_keepalive_thread.start()
+
+
+def stop_xtts_keepalive(timeout: float = 2.0) -> None:
+    _XTTS_KEEPALIVE_STOP.set()
+    thread = _xtts_keepalive_thread
+    if thread is not None and thread.is_alive():
+        thread.join(timeout)
 
 
 def get_kommz_xtts_runtime_status(force=False, cache_ttl=20):
@@ -4256,6 +4521,8 @@ _listen_runtime = {
     "ally_voice_skipped": 0,
     "ally_voice_rate_limited": 0,
     "ally_short_merged": 0,
+    # Phrases deja dans la langue choisie, affichees sans passer par DeepL
+    "ally_translate_skipped_same_lang": 0,
     "last_event_at": time.time(),  # V5.3 FIX: init à now() — évite idle_age=999999s au démarrage
     "listen_conn_state": "idle",
     "listen_conn_detail": "En attente audio",
@@ -4271,6 +4538,8 @@ _listen_runtime = {
     "watchdog_last_idle_age_s": 0.0,
     "watchdog_stream_stale_restarts": 0,
     "last_audio_seen_at": 0.0,
+    # Modele/langue Deepgram de la derniere connexion reussie (ex. nova-3/multi)
+    "listen_stt_model": "",
 }
 
 # V5.3: Timeline historique des jeux détectés
@@ -4613,6 +4882,11 @@ def listen_watchdog_loop():
 # ==================== API ====================
 app = Flask('vtp_core', static_folder=str(WEB_DIR), template_folder=str(WEB_DIR))
 CORS(app)
+# Le serveur ecoute sur 0.0.0.0 pour la telecommande mobile : la garde refuse
+# les origines etrangeres et reserve a cette machine tout ce qui n'est pas
+# telecommande, overlay ou sous-titres. Detail dans modules/security/net_guard.py.
+from modules.security import install_network_guard
+install_network_guard(app, VTP_CORE_PORT, log=stealth_print)
 
 # Force UTF-8 headers for text responses to avoid mojibake in embedded webviews.
 @app.after_request
@@ -5483,6 +5757,8 @@ def status_core():
         "scene_auto_process": str(AUDIO_CONFIG.get("scene_auto_process") or ""),
         "ally_recognition_lang": str(AUDIO_CONFIG.get("ally_recognition_lang", "multi") or "multi").strip(),
         "ally_block_french": bool(AUDIO_CONFIG.get("ally_block_french", False)),
+        "listen_translate_lang": str(AUDIO_CONFIG.get("listen_translate_lang", "auto") or "auto").strip().lower(),
+        "listen_translate_target": _listen_translate_target(),
         "ally_voice_focus_mode": str(AUDIO_CONFIG.get("ally_voice_focus_mode", "balanced") or "balanced").strip().lower(),
         "ally_voice_focus_effective": str(_listen_focus_auto_state.get("mode_effective", "balanced") or "balanced"),
         "ally_voice_focus_auto_noise_rms": float(_listen_focus_auto_state.get("noise_rms_ema", 0.0) or 0.0),
@@ -5501,7 +5777,9 @@ def status_core():
         "listen_health_summary": str(listen_health.get("summary", "Santé écoute indisponible") or "Santé écoute indisponible"),
         "listen_health_state": str(listen_health.get("state", "unknown") or "unknown"),
         "listen_runtime": {
+            "listen_stt_model": str(_listen_runtime.get("listen_stt_model", "") or ""),
             "ally_text_events": int(_listen_runtime.get("ally_text_events", 0) or 0),
+            "ally_translate_skipped_same_lang": int(_listen_runtime.get("ally_translate_skipped_same_lang", 0) or 0),
             "ally_voice_played": int(_listen_runtime.get("ally_voice_played", 0) or 0),
             "ally_voice_skipped": int(_listen_runtime.get("ally_voice_skipped", 0) or 0),
             "ally_voice_rate_limited": int(_listen_runtime.get("ally_voice_rate_limited", 0) or 0),
@@ -5650,19 +5928,25 @@ def _redirect_to_stable_launcher_if_needed() -> bool:
 
 
 def _launch_windows_self_replacer(downloaded_exe_path: str) -> bool:
-    if os.name != "nt" or not getattr(sys, "frozen", False):
+    # Nuitka ne definit pas toujours sys.frozen : "__compiled__" fait foi.
+    _compiled = "__compiled__" in globals()
+    _frozen = bool(getattr(sys, "frozen", False))
+    if os.name != "nt" or not (_compiled or _frozen):
+        update_trace("self-replacer: abandon (os.name=%r compiled=%s frozen=%s)" % (os.name, _compiled, _frozen))
         return False
     current_exe = _resolve_running_launcher_exe()
     downloaded_exe = os.path.abspath(downloaded_exe_path)
+    update_trace("self-replacer: argv0=%r executable=%r current_exe=%r downloaded=%r" % (
+        sys.argv[0], sys.executable, current_exe, downloaded_exe))
     if not current_exe.lower().endswith(".exe") or not os.path.exists(downloaded_exe):
+        update_trace("self-replacer: abandon (current_exe .exe ? %s, telechargement present ? %s)" % (
+            current_exe.lower().endswith(".exe"), os.path.exists(downloaded_exe)))
         return False
 
     current_dir = os.path.dirname(current_exe)
     current_name = os.path.basename(current_exe)
-    downloaded_name = os.path.basename(downloaded_exe)
     generic_alias = os.path.join(current_dir, "Kommz_Gamer.exe")
     diamond_alias = os.path.join(current_dir, "Kommz_Diamond.exe")
-    versioned_target = os.path.join(current_dir, downloaded_name)
 
     copy_targets = []
     seen_targets = set()
@@ -5679,25 +5963,24 @@ def _launch_windows_self_replacer(downloaded_exe_path: str) -> bool:
     current_lower = current_name.lower()
     known_kommz_name = re.match(r"^kommz_(gamer|diamond)(?:_v[\w.\-]+)?\.exe$", current_lower)
 
+    # Un exe au nom versionne (Kommz_Gamer_V5.3.9.exe) est remplace par le
+    # nouvel exe versionne (Kommz_Gamer_V5.4.0.exe), l'ancien est supprime et
+    # les raccourcis qui le visaient sont repointes. Sinon (alias, nom libre),
+    # on ecrase l'exe en place. Les alias deja presents sont rafraichis, mais
+    # on n'en cree pas (quatre copies de 290 Mo vues au test reel).
+    new_name = os.path.basename(downloaded_exe)
+    renamed = bool(
+        _is_kommz_versioned_exe_name(current_name)
+        and _is_kommz_versioned_exe_name(new_name)
+        and new_name.lower() != current_lower
+    )
+    main_target = os.path.join(current_dir, new_name) if renamed else current_exe
+    _push_target(main_target)
     if known_kommz_name:
-        # Toujours remplacer d'abord l'exe en cours d'utilisation pour garantir
-        # qu'un raccourci existant redémarre bien sur la nouvelle version.
-        _push_target(current_exe)
-        _push_target(versioned_target)
-        _push_target(generic_alias)
-        _push_target(diamond_alias)
-
-        if current_lower == "kommz_diamond.exe":
-            launch_target = diamond_alias
-        elif current_lower == "kommz_gamer.exe":
-            launch_target = generic_alias
-        else:
-            # Si on tourne depuis un exe versionné, relancer ce même binaire
-            # évite de retomber sur un alias potentiellement obsolète.
-            launch_target = versioned_target
-    else:
-        _push_target(current_exe)
-        launch_target = current_exe
+        for alias in (generic_alias, diamond_alias):
+            if os.path.exists(alias):
+                _push_target(alias)
+    launch_target = main_target
 
     if not copy_targets:
         copy_targets.append(current_exe)
@@ -5711,20 +5994,73 @@ def _launch_windows_self_replacer(downloaded_exe_path: str) -> bool:
     for extra_target in copy_targets[1:]:
         copy_lines.append(f'copy /Y "{first_target}" "{extra_target}" >nul')
     copy_block = "\n".join(copy_lines)
+    update_trace("self-replacer: cibles=%r lancement=%r renomme=%s script=%r" % (
+        copy_targets, launch_target, renamed, batch_path))
+    relink_path = os.path.join(tempfile.gettempdir(), f"kommz_relink_{current_pid}.ps1")
+    relink_block = ""
+    cleanup_block = ""
+    if renamed:
+        relink_script = (
+            "param([string]$Old,[string]$New)\r\n"
+            "$sh = New-Object -ComObject WScript.Shell\r\n"
+            "$flat = @([Environment]::GetFolderPath('Desktop'), \"$env:USERPROFILE\\Desktop\", \"$env:PUBLIC\\Desktop\",\r\n"
+            "  \"$env:APPDATA\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\") | Select-Object -Unique\r\n"
+            "$deep = @(\"$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\", \"$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\")\r\n"
+            "$files = @()\r\n"
+            "foreach ($d in $flat) { if ($d -and (Test-Path -LiteralPath $d)) { $files += Get-ChildItem -LiteralPath $d -Filter *.lnk -File -ErrorAction SilentlyContinue } }\r\n"
+            "foreach ($d in $deep) { if ($d -and (Test-Path -LiteralPath $d)) { $files += Get-ChildItem -LiteralPath $d -Filter *.lnk -File -Recurse -ErrorAction SilentlyContinue } }\r\n"
+            "Write-Output ('raccourcis examines : ' + $files.Count)\r\n"
+            "foreach ($f in $files) {\r\n"
+            "  try {\r\n"
+            "    $l = $sh.CreateShortcut($f.FullName)\r\n"
+            "    if ($l.TargetPath -ieq $Old) {\r\n"
+            "      $l.TargetPath = $New\r\n"
+            "      if ($l.WorkingDirectory -ieq (Split-Path $Old)) { $l.WorkingDirectory = (Split-Path $New) }\r\n"
+            "      $l.Save()\r\n"
+            "      Write-Output ('raccourci repointe : ' + $f.FullName)\r\n"
+            "    }\r\n"
+            "  } catch { Write-Output ('raccourci ignore : ' + $f.FullName) }\r\n"
+            "}\r\n"
+        )
+        with open(relink_path, "w", encoding="ascii", errors="replace", newline="") as f:
+            f.write(relink_script)
+        relink_block = (
+            'echo %DATE% %TIME% raccourcis >> "%LOG%"\n'
+            f'powershell -NoProfile -ExecutionPolicy Bypass -File "{relink_path}" '
+            f'-Old "{current_exe}" -New "{main_target}" >> "%LOG%" 2>&1'
+        )
+        cleanup_block = (
+            f'set "OLD={current_exe}"\n'
+            'for /L %%J in (1,1,15) do (\n'
+            '  del /F /Q "%OLD%" >nul 2>&1\n'
+            '  if not exist "%OLD%" goto olddone\n'
+            '  timeout /t 1 /nobreak >nul\n'
+            ')\n'
+            ':olddone\n'
+            'echo %DATE% %TIME% ancien exe supprime ? (absent: %OLD%) >> "%LOG%"\n'
+            f'del /Q "{relink_path}" >nul 2>&1'
+        )
     batch_script = f"""@echo off
 setlocal
 set "SRC={downloaded_exe}"
 set "LAUNCH={os.path.abspath(launch_target)}"
 set "PID={current_pid}"
+set "LOG=%TEMP%\\kommz_update.log"
+echo %DATE% %TIME% debut attente PID %PID% > "%LOG%"
 for /L %%I in (1,1,90) do (
   tasklist /FI "PID eq %PID%" | find "%PID%" >nul
   if errorlevel 1 goto replace
   timeout /t 1 /nobreak >nul
 )
 :replace
+echo %DATE% %TIME% copie >> "%LOG%"
 {copy_block}
+echo %DATE% %TIME% copie terminee, lancement %LAUNCH% >> "%LOG%"
 start "" "%LAUNCH%"
+{relink_block}
+{cleanup_block}
 :end
+echo %DATE% %TIME% fin (errorlevel %ERRORLEVEL%) >> "%LOG%"
 del /Q "%SRC%" >nul 2>&1
 del /Q "%~f0" >nul 2>&1
 """
@@ -5744,6 +6080,7 @@ def _install_update_background():
 
     url = (UPDATE_STATE.get("download_url") or "").strip()
     expected_sha256 = (UPDATE_STATE.get("download_sha256") or "").strip().lower()
+    update_trace("update: debut version=%s url=%r sha256=%s" % (CURRENT_VERSION, url, bool(expected_sha256)))
     if not url:
         UPDATE_STATE["installing"] = False
         UPDATE_STATE["install_status"] = _m("Update URL not found", "URL de mise à jour introuvable")
@@ -5787,6 +6124,7 @@ def _install_update_background():
             UPDATE_STATE["installing"] = False
             return
 
+        update_trace("update: remplacement impossible, lancement direct de %r" % installer_path)
         subprocess.Popen([installer_path], shell=False)
         UPDATE_STATE["installing"] = False
         UPDATE_STATE["install_status"] = _m("Installer launched", "Installateur lancé")
@@ -5794,6 +6132,11 @@ def _install_update_background():
         UPDATE_STATE["installing"] = False
         UPDATE_STATE["install_status"] = _m(f"Update failed: {e}", f"Échec mise à jour : {e}")
         UPDATE_STATE["error"] = str(e)
+        # Le statut affiché dans l'UI ne montre que str(e) : sans la pile
+        # complète dans startup.log, un AttributeError comme celui-ci est
+        # impossible à localiser (plusieurs appels dans ce bloc peuvent le
+        # produire : URL malformee, proxy Windows, reponse du serveur, ...).
+        update_trace("update install failed (download_url=%r):\n%s" % (url, traceback.format_exc()))
 
 @app.route("/update/install", methods=["POST"])
 def update_install_route():
@@ -6534,6 +6877,7 @@ def kommz_tts_generator(text):
             if not audio_b64:
                 return None
             import base64
+            _mark_xtts_voice_activity(synthesis_ok=True)
             return base64.b64decode(audio_b64)
         except Exception:
             return None
@@ -6596,6 +6940,7 @@ def kommz_tts_generator(text):
                             tts_engine="Kommz Voice API",
                             tts_route="voice_id / audio direct",
                         )
+                        _mark_xtts_voice_activity(synthesis_ok=True)
                         return r.content
 
                     payload = r.json()
@@ -6617,6 +6962,7 @@ def kommz_tts_generator(text):
                         tts_engine="Kommz Voice API",
                         tts_route="voice_id / audio_url",
                     )
+                    _mark_xtts_voice_activity(synthesis_ok=True)
                     return dl.content
                 except Exception as api_ex:
                     last_api_err = _repair_display_text(str(api_ex))
@@ -6861,7 +7207,7 @@ def kommz_tts_generator(text):
                     req_timeout = (3, 35)
                 else:
                     req_timeout = (5, 180) if turbo_mode else 300
-                r = _HTTP.post(url_modal, files=files, data=data, timeout=req_timeout)
+                r = _HTTP.post(url_modal, files=files, data=data, headers=_kommz_auth_headers(), timeout=req_timeout)
                 stealth_print(f"📥 Réponse reçue, status: {r.status_code}")
                 if r.status_code == 200:
                     response = r
@@ -6901,8 +7247,7 @@ def kommz_tts_generator(text):
             stealth_print(f"✅ URL Modal corrigée automatiquement: {used_url}")
 
         if response.status_code == 200:
-            global _last_xtts_activity_ts
-            _last_xtts_activity_ts = time.time()
+            _mark_xtts_voice_activity(synthesis_ok=True)
             VOICE_CLOUD_LIMIT_STATE["reached"] = False
             VOICE_CLOUD_LIMIT_STATE["message"] = ""
             if _is_trial_voice_mode_enabled():
@@ -8990,7 +9335,7 @@ def _speculative_prewarm(text, target):
       - intervalle minimum entre deux tentatives
       - le texte doit avoir changé de façon significative depuis la dernière
     """
-    if not bool(AUDIO_CONFIG.get("speculative_translation_enabled", True)):
+    if not bool(AUDIO_CONFIG.get("speculative_translation_enabled", False)):
         return
     text = (text or "").strip()
     if len(text) < 8:
@@ -9043,6 +9388,10 @@ def _speculative_record(text, target):
     """Note si le texte final était déjà en cache. Sert uniquement à mesurer
     le taux de réussite : sans ce chiffre, impossible de savoir si la
     spéculation apporte quoi que ce soit."""
+    # Fonction desactivee : rien n'a ete lance, chaque phrase compterait
+    # sinon comme un echec et fausserait une mesure ulterieure.
+    if not bool(AUDIO_CONFIG.get("speculative_translation_enabled", False)):
+        return
     try:
         hit = _spec_cache_get(text, target) is not None
         if hit:
@@ -9117,6 +9466,9 @@ def translate_text(text, target, source=None):
             if target == "VN": google_target = "vi"
             elif target == "JP": google_target = "ja"
             elif "EN" in target: google_target = "en"
+            # Google attend zh-CN et pt, pas les codes DeepL ZH et PT-PT
+            elif target.startswith("ZH"): google_target = "zh-CN"
+            elif target == "PT-PT": google_target = "pt"
             else: google_target = target.lower()
 
             translated = GoogleTranslator(source='auto', target=google_target).translate(text)
@@ -10104,13 +10456,29 @@ GAMING_CORRECTIONS = {
     "ult": "Ultimate", "ulti": "Ultimate", "smurf": "Smurf", "cheat": "Cheater", "aim bot": "Aimbot"
 }
 
+# Mots entiers seulement : remplacer "ult" au milieu d'un mot donnait
+# "resUltimateat" pour "resultat" (culture, adulte, multiple, default...).
+# \w couvre les lettres accentuees. Termes longs d'abord.
+_GAMING_CORRECTIONS_RE = re.compile(
+    r"(?<!\w)(" + "|".join(
+        re.escape(k) for k in sorted(GAMING_CORRECTIONS, key=len, reverse=True)
+    ) + r")(?!\w)",
+    re.IGNORECASE,
+)
+
+
 def clean_gaming_text(text):
-    text_lower = text.lower()
-    for error, fix in GAMING_CORRECTIONS.items():
-        if error in text_lower:
-            pattern = re.compile(re.escape(error), re.IGNORECASE)
-            text = pattern.sub(fix, text)
-    return text
+    if not text:
+        return text
+
+    def _fix(m):
+        fix = GAMING_CORRECTIONS[m.group(1).lower()]
+        # Deja ecrit en entier ("call of duty") : on ne double pas la fin.
+        if len(fix) > len(m.group(0)) and text[m.start():m.start() + len(fix)].lower() == fix.lower():
+            return m.group(0)
+        return fix
+
+    return _GAMING_CORRECTIONS_RE.sub(_fix, text)
 
 
 def normalize_emotion_cues_for_tts(text: str) -> str:
@@ -10605,6 +10973,8 @@ def enqueue_user_pipeline(text, src_lang, source="rts"):
     )
     try:
         USER_PIPELINE_QUEUE.put_nowait(item)
+        if cleaned_source in {"ptt", "rts"}:
+            _mark_xtts_voice_activity()
         queued = USER_PIPELINE_QUEUE.qsize()
         if cleaned_source == "ptt":
             _set_module_runtime("turbo", "PTT prioritaire", f"File pipeline: {queued} tâche(s)")
@@ -10985,11 +11355,22 @@ class DeepgramEngine:
         from difflib import SequenceMatcher
         global _listen_engine_active
 
-        with _listen_engine_guard:
-            if _listen_engine_active:
+        # Une relance (bouton ECOUTE, raccourci, watchdog) arrete l'ancien
+        # moteur puis demarre celui-ci aussitot. L'ancien libere le verrou
+        # en sortant de sa boucle, jusqu'a ~1 s plus tard (attente quand
+        # l'ecoute est coupee). On l'attend au lieu d'abandonner, sinon plus
+        # aucun moteur ne tourne. Un moteur encore voulu (is_running) garde
+        # le verrou et ce lancement est ignore apres le delai.
+        wait_deadline = time.time() + 6.0
+        while True:
+            with _listen_engine_guard:
+                if not _listen_engine_active:
+                    _listen_engine_active = True
+                    break
+            if (not self.is_running) or time.time() >= wait_deadline:
                 stealth_print("ℹ️ Mode écoute: moteur deja actif, lancement ignore.")
                 return
-            _listen_engine_active = True
+            time.sleep(0.1)
         # COM doit être initialisé dans CE thread (WASAPI/loopback), sinon 0x800401f0.
         try:
             ctypes.windll.ole32.CoInitialize(None)
@@ -11004,6 +11385,10 @@ class DeepgramEngine:
         last_audio_ts = 0.0
         ally_recent_play_ts = collections.deque(maxlen=20)
         last_logged_live_lang = ""
+        last_logged_stt_model = ""
+        # Passe a True si Deepgram refuse une connexion avec les termes :
+        # on continue sans eux plutot que de retomber sur nova-2.
+        keyterms_refused = False
         last_cable_silence_log = 0.0
         last_loopback_retry_ts = 0.0
         # Mode écoute par défaut: loopback système (capture directe du son Windows).
@@ -11239,9 +11624,7 @@ class DeepgramEngine:
                                 last_lang_check_ts = now_lc
                                 try:
                                     lang_cfg_curr = str(AUDIO_CONFIG.get("ally_recognition_lang", "multi") or "multi").strip()
-                                    curr_live_lang = normalize_live_deepgram_lang(lang_cfg_curr)
-                                    if use_loopback and curr_live_lang.lower() in ("en", "english"):
-                                        curr_live_lang = "multi"
+                                    curr_live_lang = _listen_live_lang(lang_cfg_curr, use_loopback)
                                     if connected_live_lang and curr_live_lang != connected_live_lang:
                                         try:
                                             dg_conn.finish()
@@ -11322,7 +11705,7 @@ class DeepgramEngine:
                             last_connect_try_ts = time.time()
                             _set_listen_conn_state("connecting", "Connexion Deepgram...", 0.0)
                             try:
-                                self.dg_client = DeepgramClient(DEEPGRAM_API_KEY)
+                                self.dg_client = DeepgramClient(require_deepgram_api_key())
                                 dg_conn = self.dg_client.listen.websocket.v("1")
 
                                 def on_msg(h, result, **kwargs):
@@ -11339,7 +11722,7 @@ class DeepgramEngine:
                                         part = (part or "").strip()
                                         if part:
                                             candidate = (sentence_buffer + " " + clean_gaming_text(part)).strip()
-                                            _speculative_prewarm(candidate, "FR")
+                                            _speculative_prewarm(candidate, _listen_translate_target())
                                         return
                                     try:
                                         ts = result.channel.alternatives[0].transcript
@@ -11375,12 +11758,19 @@ class DeepgramEngine:
                                     if not should_flush:
                                         return
 
-                                    _speculative_record(sentence_buffer, "FR")
-                                    # Traduction deja preparee sur un partiel :
-                                    # on evite l'aller-retour reseau.
-                                    trad = _spec_cache_get(sentence_buffer, "FR")
-                                    if not trad:
-                                        trad = translate_text(sentence_buffer, "FR") or sentence_buffer
+                                    listen_target = _listen_translate_target()
+                                    if _ally_text_is_in_lang(sentence_buffer, listen_target, result):
+                                        # Deja dans la langue choisie : DeepL ne
+                                        # ferait que reformuler, et consommer du quota.
+                                        trad = sentence_buffer
+                                        _bump_listen_runtime("ally_translate_skipped_same_lang")
+                                    else:
+                                        _speculative_record(sentence_buffer, listen_target)
+                                        # Traduction deja preparee sur un partiel :
+                                        # on evite l'aller-retour reseau.
+                                        trad = _spec_cache_get(sentence_buffer, listen_target)
+                                        if not trad:
+                                            trad = translate_text(sentence_buffer, listen_target) or sentence_buffer
                                     trad = (trad or sentence_buffer).strip()
                                     if not trad:
                                         sentence_buffer = ""
@@ -11453,10 +11843,7 @@ class DeepgramEngine:
 
                                 dg_conn.on(LiveTranscriptionEvents.Transcript, on_msg)
                                 lang_cfg = str(AUDIO_CONFIG.get("ally_recognition_lang", "multi") or "multi").strip()
-                                live_lang = normalize_live_deepgram_lang(lang_cfg)
-                                # En loopback (YouTube/son système), en-US capte mal le multilingue.
-                                if use_loopback and live_lang.lower() in ("en", "english"):
-                                    live_lang = "multi"
+                                live_lang = _listen_live_lang(lang_cfg, use_loopback)
                                 if live_lang != last_logged_live_lang:
                                     stealth_print(f"🌐 Mode écoute langue: {live_lang}")
                                     last_logged_live_lang = live_lang
@@ -11469,16 +11856,33 @@ class DeepgramEngine:
                                 if "en" not in candidates:
                                     candidates.append("en")
 
-                                for idx, cand_lang in enumerate(candidates, start=1):
-                                    tried.append(cand_lang)
+                                # nova-3 d'abord : en "multi", nova-2 ne distingue que
+                                # l'anglais et l'espagnol, et transcrit le francais en
+                                # faux anglais. nova-2 reste en repli si nova-3 est
+                                # refuse.
+                                listen_model = str(AUDIO_CONFIG.get("listen_stt_model", "nova-3") or "nova-3").strip().lower()
+                                if listen_model not in ("nova-3", "nova-2"):
+                                    listen_model = "nova-3"
+                                models = [listen_model] + (["nova-2"] if listen_model != "nova-2" else [])
+                                attempts = [(m, l) for m in models for l in candidates]
+                                keyterms = []
+                                if bool(AUDIO_CONFIG.get("listen_keyterms_enabled", True)):
+                                    raw_terms = AUDIO_CONFIG.get("listen_keyterms") or []
+                                    if isinstance(raw_terms, (list, tuple)):
+                                        keyterms = [str(t).strip()[:50] for t in raw_terms if str(t or "").strip()][:100]
+
+                                for idx, (cand_model, cand_lang) in enumerate(attempts, start=1):
+                                    tried.append(f"{cand_model}/{cand_lang}")
                                     # Réseau instable: on réessaie plusieurs fois "multi"
                                     # avant de dégrader en "en".
-                                    max_tries = 3 if cand_lang == "multi" else 1
+                                    max_tries = 3 if (cand_lang == "multi" and cand_model == models[0]) else 1
                                     for att in range(1, max_tries + 1):
+                                        # Termes reserves a nova-3 (nova-2 ne connait que keywords).
+                                        kt_now = keyterms if (cand_model == "nova-3" and keyterms and not keyterms_refused) else []
                                         try:
-                                            dg_conn.start(
+                                            started = dg_conn.start(
                                                 LiveOptions(
-                                                    model="nova-2",
+                                                    model=cand_model,
                                                     language=cand_lang,
                                                     smart_format=True,
                                                     encoding="linear16",
@@ -11488,24 +11892,42 @@ class DeepgramEngine:
                                                     # par défaut. Sans eux, aucune
                                                     # spéculation possible.
                                                     interim_results=True,
-                                                )
+                                                ),
+                                                # En addons : passe par l'URL quelle que
+                                                # soit la version du SDK (keyterm=...&keyterm=...).
+                                                addons=({"keyterm": kt_now} if kt_now else None),
                                             )
+                                            # Le SDK v3 renvoie False sur un refus
+                                            # (modele, cle, reseau) au lieu de lever.
+                                            if started is False:
+                                                if kt_now:
+                                                    keyterms_refused = True
+                                                    stealth_print("ℹ️ Deepgram live: vocabulaire refuse, nouvel essai sans")
+                                                raise RuntimeError(f"connexion refusee ({cand_model}/{cand_lang})")
                                             start_ok = True
+                                            _listen_runtime["listen_stt_model"] = f"{cand_model}/{cand_lang}" + (f" +{len(kt_now)} termes" if kt_now else "")
+                                            if cand_model != listen_model:
+                                                stealth_print(f"ℹ️ Deepgram live: {listen_model} refuse, repli sur {cand_model}")
                                             if cand_lang != live_lang:
                                                 stealth_print(f"ℹ️ Deepgram live start fallback: {live_lang} -> {cand_lang}")
+                                            model_tag = f"{cand_model}/{cand_lang}" + (f"+{len(kt_now)}" if kt_now else "")
+                                            if model_tag != last_logged_stt_model:
+                                                kt_txt = f" + {len(kt_now)} termes" if kt_now else ""
+                                                stealth_print(f"🌐 Mode écoute modèle: {cand_model} ({cand_lang}){kt_txt}")
+                                                last_logged_stt_model = model_tag
                                             break
                                         except Exception as e_lang:
                                             err_txt = str(e_lang).lower()
                                             if "timed out" in err_txt or "handshake" in err_txt or "timeout" in err_txt:
-                                                stealth_print(f"⚠️ Deepgram live timeout réseau ({cand_lang}) tentative {att}/{max_tries}")
+                                                stealth_print(f"⚠️ Deepgram live timeout réseau ({cand_model}/{cand_lang}) tentative {att}/{max_tries}")
                                             else:
-                                                stealth_print(f"⚠️ Deepgram live start error ({cand_lang}): {e_lang}")
+                                                stealth_print(f"⚠️ Deepgram live start error ({cand_model}/{cand_lang}): {e_lang}")
                                             if att < max_tries:
                                                 time.sleep(0.45 * att)
                                     if start_ok:
                                         break
-                                    if idx < len(candidates):
-                                        time.sleep(0.35 * idx)
+                                    if idx < len(attempts):
+                                        time.sleep(0.35 * min(idx, 3))
 
                                 if not start_ok:
                                     stealth_print(f"⚠️ Deepgram live indisponible (tentatives: {', '.join(tried)})")
@@ -11920,7 +12342,7 @@ def transcribe_safe(audio_source, sample_rate=16000):
             "lol:8",
         ])
         headers = {
-            "Authorization": f"Token {DEEPGRAM_API_KEY}",
+            "Authorization": f"Token {get_deepgram_api_key()}",
             "Content-Type": "audio/wav",
         }
 
@@ -12808,6 +13230,60 @@ def get_startup_log_path() -> str:
         pass
     return os.path.join(target_dir, "startup.log")
 
+def _cleanup_old_onefile_dirs_async():
+    """Supprime les dossiers de decompression des builds precedents.
+
+    final_build.bat decompresse l'exe dans
+    %LOCALAPPDATA%\\KommzGamer\\bin\\<version>-<horodatage> et le conserve, pour ne
+    pas tout redecompresser a chaque lancement. Chaque build a son dossier :
+    apres une mise a jour, l'ancien reste. On ne touche qu'aux freres du
+    dossier courant, et seulement s'il est bien sous ...\\KommzGamer\\bin.
+    """
+    if not ("__compiled__" in globals() or getattr(sys, "frozen", False)):
+        return
+    try:
+        current = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
+        bin_dir = current.parent
+        if bin_dir.name.lower() != "bin" or bin_dir.parent.name.lower() != "kommzgamer":
+            return
+    except Exception:
+        return
+
+    def _run():
+        import shutil
+        time.sleep(20.0)
+        for entry in bin_dir.iterdir():
+            try:
+                if not entry.is_dir() or entry.resolve() == current:
+                    continue
+                # Renommer d'abord : Windows le refuse tant qu'un processus
+                # (ancienne version encore ouverte) utilise ses fichiers. Un
+                # dossier a moitie supprime sous son nom d'origine serait
+                # reutilise tel quel au prochain lancement de cette version.
+                doomed = entry
+                if not entry.name.endswith(".old"):
+                    doomed = entry.with_name(entry.name + ".old")
+                    entry.rename(doomed)
+                shutil.rmtree(doomed, ignore_errors=True)
+                startup_trace(f"onefile: ancien dossier supprime {entry.name}")
+            except Exception:
+                pass
+
+    threading.Thread(target=_run, daemon=True, name="Kommz-OnefileCleanup").start()
+
+
+def update_trace(msg: str):
+    """Journal de mise a jour, ajoute en fin de fichier : startup.log est vide a chaque demarrage."""
+    try:
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        path = os.path.join(os.path.dirname(get_startup_log_path()), "update.log")
+        if os.path.exists(path) and os.path.getsize(path) > 256 * 1024:
+            os.replace(path, path + ".old")
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"[{stamp}] {msg}\n")
+    except Exception:
+        pass
+
 def startup_trace(msg: str):
     try:
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -13275,7 +13751,7 @@ app.register_blueprint(_tts_blueprint)
 _stt_blueprint = register_stt_module(
     AUDIO_CONFIG=AUDIO_CONFIG,
     COMMUNITY_EDITION=COMMUNITY_EDITION,
-    DEEPGRAM_API_KEY=DEEPGRAM_API_KEY,
+    DEEPGRAM_API_KEY_GETTER=get_deepgram_api_key,
     LICENSE_MGR=LICENSE_MGR,
     LAST_USER_AUDIO_BUFFER_SETTER=lambda value: globals().__setitem__("LAST_USER_AUDIO_BUFFER", value),
     _is_turbo_mode_active=_is_turbo_mode_active,
@@ -13383,7 +13859,8 @@ if __name__ == "__main__":
             fh.write("")
     except Exception:
         pass
-    startup_trace("main: process start")
+    startup_trace(f"main: process start (imports {time.time() - _MODULE_IMPORT_T0:.1f}s)")
+    _cleanup_old_onefile_dirs_async()
     AUDIO_CONFIG["_startup_ts"] = time.time()  # V5.2: timestamp demarrage pour uptime
     try: 
         with open("log_discret.txt", "w", encoding="utf-8") as f: f.write("")
@@ -13473,6 +13950,7 @@ if __name__ == "__main__":
             stealth_print(f"[WARN] Verification licence differee: {e}")
 
     threading.Thread(target=_refresh_licenses_safe, daemon=True).start()
+    start_xtts_keepalive()
     threading.Thread(target=_user_pipeline_worker_loop, daemon=True).start()
     
     # SUPPRIMÉ V5.3 : force-override écrasait les
@@ -13692,6 +14170,7 @@ if __name__ == "__main__":
             ctypes.windll.user32.MessageBoxW(0, msg, "Kommz Gamer - Erreur UI", 0x10)
         except Exception:
             pass
+    stop_xtts_keepalive()
     try:
         save_settings()
         stealth_print("? Config sauvegardée à la fermeture.")

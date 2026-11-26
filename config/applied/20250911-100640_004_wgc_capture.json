@@ -1,8 +1,0 @@
-{
-  "mod": "wgc_capture",
-  "data": {
-    "autostart": true,
-    "source": "desktop",
-    "dxgi": true
-  }
-}

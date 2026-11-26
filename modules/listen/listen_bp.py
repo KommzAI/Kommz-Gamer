@@ -482,6 +482,10 @@ def alt():
             except Exception:
                 pass
             dg_engine = DeepgramEngine()
+            # Sans cette affectation, le moteur suivant n'est jamais arrete :
+            # la prochaine desactivation viserait l'ancien.
+            import vtp_core as _core
+            _core.DG_ENGINE = dg_engine
             listen_dev_id = AUDIO_CONFIG.get("game_input_device", 0)
             try:
                 listen_dev_id = int(listen_dev_id)
@@ -1040,6 +1044,26 @@ def set_listen_voice_focus():
         })
     except Exception as e:
         stealth_print(f"❌ Erreur réglage Voice Focus: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@listen_bp.route("/translate_lang", methods=["POST"])
+def set_listen_translate_lang():
+    """Langue dans laquelle le Mode Ecoute traduit les coequipiers."""
+    try:
+        # Pas d'import de vtp_core ici : lance comme script, il serait
+        # recharge une seconde fois. La langue effective se lit dans /status.
+        from modules.config.config import LISTEN_TRANSLATE_LANGS
+        data = request.get_json(silent=True) or {}
+        lang = str(data.get("lang", "auto") or "auto").strip().upper()
+        if lang != "AUTO" and lang not in LISTEN_TRANSLATE_LANGS:
+            return jsonify({"ok": False, "error": "Langue invalide"}), 400
+        AUDIO_CONFIG["listen_translate_lang"] = lang.lower()
+        save_settings()
+        print(f"[ECOUTE] langue de traduction -> {lang.lower()}", file=sys.stderr, flush=True)
+        return jsonify({"ok": True, "listen_translate_lang": lang.lower()})
+    except Exception as e:
+        print(f"[ECOUTE] erreur langue de traduction : {e}", file=sys.stderr, flush=True)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 

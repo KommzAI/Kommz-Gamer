@@ -67,7 +67,7 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "DisplayIcon" "$INSTDIR\web\icon.ico"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "Publisher" "Kommz Innovations"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "URLInfoAbout" "https://github.com/Kommz-Gamer/Kommz-Gamer"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "URLInfoAbout" "https://github.com/KommzAI/Kommz-Gamer"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KommzGamer_${EDITION}" "NoRepair" 1
 

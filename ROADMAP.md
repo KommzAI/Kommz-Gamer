@@ -1,6 +1,7 @@
 # Kommz Gamer — Roadmap
 
-> Dernière mise à jour : V5.4 en cours · migration de configuration livrée
+> Dernière mise à jour : 3 octobre 2026 · V5.4 recentrée sur la stabilisation,
+> fonctionnalités social / streaming reportées en V5.5
 
 ---
 
@@ -164,7 +165,40 @@
 
 ---
 
-## V5.4 — SOCIAL, STREAMING & MULTIJOUEUR (🔄 en cours)
+## V5.4 — PERFORMANCE, SÉCURITÉ & MISE À JOUR (🔄 en cours)
+
+> **Périmètre décidé le 3 octobre 2026.** La V5.4 sort avec ce qui est déjà
+> fait, une fois stabilisé : voix clonée prête en quelques secondes et
+> maintenue pendant la partie, protection des routes de synthèse, mise à
+> jour intégrée, migration des réglages. Les fonctionnalités social /
+> streaming / multijoueur passent en V5.5 : plusieurs semaines de travail en
+> solo, pendant lesquelles les utilisateurs resteraient en 5.3.1 avec un
+> démarrage de deux minutes.
+
+### Avant la sortie — dans l'ordre
+- [✅] Kommz-Voice PR #10 : `/warmup` réveille aussi les relais `/synthesis`
+  et `/clone`. Déployée.
+- [✅] Privé PR #3 : maintien en éveil (warmup toutes les 240 s, arrêt 900 s
+  après la dernière activité vocale). Testée sous Windows, fusionnée.
+- [✅] Kommz-Voice PR #11 : identifiant de conteneur dans les journaux, fin
+  de l'`AsyncUsageWarning`. Fusionnée, **`modal deploy` à faire**.
+- [🔄] **Privé PR #1** : le client envoie sa clé à `/warmup` et `/clone`.
+  À tester sur `test-v5.4`.
+- [🔄] **Bug prioritaire** : le runtime écrit dans `settings.json`, le modèle
+  livré avec l'exécutable. Cause trouvée et corrigée (privé PR #4), à tester.
+- [✅] Traduction spéculative mesurée sur une session plus longue (voir plus
+  bas) : désactivée par défaut, migration de schéma 2 pour les profils 5.3.x.
+- [🔄] Auditer les autres routes servies sur `0.0.0.0` (voir Sécurité) :
+  garde réseau (privé PR #5), à tester.
+- [🔄] Render : statut « chaud » à 600 s au lieu des 300 s de Modal
+  (Kommz-Voice PR #12).
+- [🔄] Nettoyage : copies obsolètes `modal_*.py` et `vtp_web_server.py` du
+  dépôt privé, doublon inutilisé de `kommz_tts_generator` dans
+  `modules/tts/tts.py`, fichier parasite nommé `main` à la racine
+  (privé PR #6).
+- [ ] **En dernier** : build 5.4, puis test du circuit de mise à jour
+  5.3.1 → 5.4 sur un vrai PC.
+- [ ] Après la sortie : contacter la chaîne IA Professeur (e-mail prêt).
 
 ### Mise à jour — finir le circuit
 > La V5.3.1 a réparé la détection. L'installation n'avait jamais pu être
@@ -207,6 +241,61 @@
   c'est la seule.
 - [ ] Décider si `/remote` doit exiger un jeton d'appairage plutôt que la
   seule présence sur le réseau.
+
+### Tests qui testent vraiment le logiciel (✅ prêt)
+> 23 fonctions de `tests/` comparaient des nombres écrits dans le test lui-même (par exemple
+> `default_threshold = 120`) : elles ne pouvaient jamais échouer.
+- [✅] `tests/_source.py` relit `vtp_core.py` avec `ast` (le fichier ne s'importe pas hors Windows) :
+  tables de presets, profils de bruit, presets expressifs, et la fonction `_apply_voice_focus_signal`.
+- [✅] `test_presets.py`, `test_voice_focus.py`, `test_watchdog.py` réécrits sur les vraies données et le vrai
+  code (le script `watchdog.py` avec un faux sous-processus). Contrôle par mutation : casser un gain, une borne,
+  une clé de preset ou la relance du watchdog fait échouer au moins un test.
+- [✅] `.github/workflows/tests.yml` lance `pytest` à chaque PR (hors `test_smoke.py`, réservé à Windows).
+- [ ] Écart connu, marqué `xfail` : le réglage par défaut `listen_watchdog_idle_threshold_s` vaut 240 s dans
+  `config.py` alors que le moteur le ramène à 180 s. À corriger avec `SETTINGS_SCHEMA_VERSION` et
+  `_SETTINGS_MIGRATIONS`.
+### Test de démarrage : le bon port et les vraies routes (✅ prêt, à exécuter sous Windows)
+> `tests/test_smoke.py` interrogeait le port 8790 et les routes `/config` et `/audio/listen/health`, qui n'existent pas :
+> il ne pouvait pas passer. L'application écoute sur 8770.
+- [✅] Port 8770, routes `/status`, `/audio/devices`, `/` et `/guide/view/general`. Si Kommz Gamer tourne déjà, le test
+  se saute avec un message ; si l'application ne démarre pas, il échoue avec le code de sortie.
+- [✅] Deux tests statiques, valables partout, vérifient que le port et les routes existent dans le code ;
+  les 4 tests qui lancent l'application se sautent hors Windows. La CI exécute donc tout le dossier `tests/`.
+- [ ] À exécuter sous Windows : `.venv\Scripts\python.exe -m pytest tests\test_smoke.py -v` (Kommz Gamer fermé).
+
+### Compilation : refuser un exe dont les deux versions diffèrent (✅ prêt, à tester sous Windows)
+> Lancée depuis les sources, l'application lit `version.txt` ; compilée, elle utilise `APP_BUILD_VERSION`
+> (`vtp_core.py`) ; `final_build.bat` nomme l'exe d'après `version.txt`. Des valeurs différentes donnent un
+> exe qui porte un numéro et en affiche un autre.
+- [✅] `scripts/check_version.py` compare les deux valeurs et affiche les deux, avec la ligne de `vtp_core.py`.
+- [✅] `final_build.bat` l'appelle en étape 0, avant le nettoyage de `dist`, et s'arrête si elles diffèrent.
+- [✅] `tests/test_check_version.py` : 8 tests, dont un qui échoue si `version.txt` et `APP_BUILD_VERSION`
+  divergent dans le dépôt, et un qui garde `final_build.bat` en ASCII avec fins de ligne CRLF.
+- [ ] À essayer sous Windows : lancer `final_build.bat` avec des versions identiques, puis avec `version.txt`
+  modifié.
+
+### Liens GitHub : l'organisation KommzAI partout (✅ prêt)
+> Le code, les scripts et les modèles renvoyaient encore vers `Kommz-Gamer/Kommz-Gamer` et `Kommz-Gamer/Kommz-Voice`,
+> alors que le site et la bannière AGPL utilisent `KommzAI`. L'ancienne adresse redirige, mais mieux vaut une seule.
+- [✅] `modules/listen/__init__.py`, `web/index.html`, `scripts/build_portable.bat`, `scripts/build_installer.nsi`,
+  `release-template.*.md` et `.github/ISSUE_TEMPLATE/config.yml` pointent vers `KommzAI/...`.
+- [ ] Prend effet dans le dépôt public au prochain `export_community.ps1`.
+
+### Premier lancement : aide au câble audio virtuel (✅ prêt, à tester sur Windows)
+> Un joueur sans VB-Cable ne comprenait pas pourquoi le jeu n'entendait pas la voix traduite.
+- [✅] `web/index.html` : `showCableHintIfNeeded()` affiche une carte discrète (bas gauche) si aucune
+  sortie audio ne contient « cable », « vb-audio » ou « voicemeeter ». Boutons : guide d'installation,
+  « Plus tard », « Ne plus afficher » (mémorisé dans `kommz_cable_hint_dismissed`). Elle attend la fin de
+  l'écran de démarrage et passe au-dessus du portail de licence.
+- [ ] À vérifier sur un PC Windows réel : avec et sans VB-Cable, avec Voicemeeter seul.
+- [ ] Idée : une courte vidéo d'installation de VB-Cable dans le guide.
+
+### Serveur de synthèse — clé d'API sur les routes XTTS (🔄 en cours)
+- [✅] Client : la clé Kommz Voice est envoyée à `/warmup` et `/clone`.
+- [🔄] Serveur : clé acceptée, plafond de conteneurs configurable
+  (Kommz-Voice, PR 6 et 7).
+- [ ] Rendre la clé obligatoire une fois la mise à jour diffusée.
+- [ ] Même traitement pour GPT-SoVITS.
 
 ### Cold start TTS — diagnostiqué, corrigé côté client (🔄 reste à mesurer)
 > `tts_ms: 20334.7` pendant que l'interface affichait « en ligne ».
@@ -267,6 +356,14 @@
   continu ≈ 790 $/mois : hors de question par défaut. Piste réaliste :
   warmup déclenché à l'ouverture de l'application et à l'entrée en partie,
   plutôt qu'un conteneur maintenu allumé.
+- [✅] Démarrage à froid propre mesuré : warmup 6,2 s au lieu de 115,6 s.
+- [✅] Relais `/synthesis` réveillé par chaque warmup (Kommz-Voice PR #10).
+- [✅] Maintien en éveil côté client pendant une partie : un warmup toutes
+  les 4 min tant qu'il y a eu une activité vocale dans les 15 dernières
+  minutes (réglable). Testé sous Windows : phrase après 10 min de silence en
+  6,78 s, arrêt à 904 s.
+- [ ] Un redémarrage du relais `/synthesis` observé malgré les pings : à
+  trancher avec les identifiants de conteneur (PR #11).
 
 ### Render — keepalive désactivé et statut faux
 - [ ] `XTTS_KEEPALIVE_ENABLED` vaut `"0"` par défaut : **le keepalive ne tourne
@@ -305,6 +402,16 @@
   toute modification manuelle du fichier. Tant qu'elle tourne, le premier
   réglage touché dans l'interface réécrit tout le fichier depuis la mémoire.
 
+### Voice Focus : mesuré, à trancher en vraie partie
+- [✅] Mesure du 5 octobre 2026 (vidéo française propre, nova-3) : avec
+  Voice Focus « Auto », mots inventés (« couchonnements », « guichet sous
+  souvenir ») ; avec « Off », phrases presque exactes. Sur une voix propre,
+  le filtre dégrade le signal envoyé à la reconnaissance.
+- [ ] Mesurer en vraie partie (bruits de jeu) : « Off » contre « Normal »,
+  mêmes lignes `⚡ [Allié]` comparées. Si « Off » gagne aussi, changer le
+  défaut (`ally_voice_focus_mode`, aujourd'hui `balanced`) avec une migration
+  de schéma ; sinon corriger le filtre pour qu'il épargne la voix.
+
 ### Traduction spéculative — mesurée, dépriorisée
 - [✅] Première mesure valide (seuil réellement à 3) : 17 lancées, 1 réussite,
   12 échecs. Fonctionne, mais rarement.
@@ -313,9 +420,22 @@
   de deux caractères et un échec total se comptaient pareil.
 - [✅] Normalisation corrigée : apostrophes supprimées au lieu d'être
   remplacées par une espace (`hes` vs `he's`, `lennemi` vs `l ennemi`).
-- [ ] **Dépriorisée.** Elle économise ~150 ms de traduction quand la synthèse
-  à froid en coûte 20 334. Conservée car écrite et peu coûteuse ; à trancher
-  sur `near_misses` quand une session plus longue sera disponible.
+- [✅] **Seconde mesure (5 octobre 2026)** : 23 phrases, 105 lancées,
+  4 réussites, 19 échecs dont 17 de peu (dernier ratio 0,985). Le dernier
+  partiel manque presque toujours les derniers mots de la phrase.
+- [✅] **Désactivée par défaut en 5.4** : environ 5,5 fois plus d'appels
+  DeepL (quota en caractères) pour une phrase sur six accélérée. Migration
+  de schéma 2 pour réaligner les profils existants. Code et compteurs
+  conservés.
+- [ ] Piste pour une reprise : ne traduire qu'un partiel jugé stable (fin de
+  phrase détectée, ou partiel inchangé depuis un court délai) plutôt qu'à
+  chaque croissance du texte.
+
+---
+
+## V5.5 — SOCIAL, STREAMING & MULTIJOUEUR
+
+> Reporté de la V5.4 le 3 octobre 2026. Contenu inchangé.
 
 ### Endpointing & tours de parole
 > Piste issue d'un échange public. Deux corrections apportées par
@@ -405,7 +525,7 @@
 
 ---
 
-## V5.5 — PLATEFORME & ÉCOSYSTÈME
+## V5.6 — PLATEFORME & ÉCOSYSTÈME
 
 - [ ] Plugin Marketplace intégrée (parcourir, installer, désinstaller)
 - [ ] SDK développeur (API Python + JS + doc)

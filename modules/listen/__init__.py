@@ -49,8 +49,8 @@ def get_support_links():
             "ok": True,
             "links": {
                 "discord": "https://discord.gg/kommz-gamer",
-                "github_issues": "https://github.com/Kommz-Gamer/Kommz-Gamer/issues/new?template=bug_report.md",
-                "github_discussions": "https://github.com/Kommz-Gamer/Kommz-Gamer/discussions",
+                "github_issues": "https://github.com/KommzAI/Kommz-Gamer/issues/new?template=bug_report.md",
+                "github_discussions": "https://github.com/KommzAI/Kommz-Gamer/discussions",
                 "patreon": "https://patreon.com/KommzInnovations",
                 "docs": "https://docs.kommz.app",
             }
