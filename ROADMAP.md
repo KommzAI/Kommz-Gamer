@@ -290,13 +290,6 @@
 - [ ] À vérifier sur un PC Windows réel : avec et sans VB-Cable, avec Voicemeeter seul.
 - [ ] Idée : une courte vidéo d'installation de VB-Cable dans le guide.
 
-### Serveur de synthèse — clé d'API sur les routes XTTS (🔄 en cours)
-- [✅] Client : la clé Kommz Voice est envoyée à `/warmup` et `/clone`.
-- [🔄] Serveur : clé acceptée, plafond de conteneurs configurable
-  (Kommz-Voice, PR 6 et 7).
-- [ ] Rendre la clé obligatoire une fois la mise à jour diffusée.
-- [ ] Même traitement pour GPT-SoVITS.
-
 ### Cold start TTS — diagnostiqué, corrigé côté client (🔄 reste à mesurer)
 > `tts_ms: 20334.7` pendant que l'interface affichait « en ligne ».
 > Hypothèse initiale démentie : le warmup **atteint bien** le conteneur GPU
