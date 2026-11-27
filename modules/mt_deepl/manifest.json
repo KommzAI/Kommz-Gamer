@@ -1,0 +1,17 @@
+{
+  "id": "mt_deepl",
+  "name": "Mt Deepl",
+  "version": "0.1.0",
+  "entry": "mt_deepl.py",
+  "endpoints": {
+    "health": "/api/mod/mt_deepl/health",
+    "configure": "/api/mod/mt_deepl/configure",
+    "enable": "/api/mod/mt_deepl/enable"
+  },
+  "defaultConfig": {
+    "auth_key": "",
+    "tier": "free",
+    "formality": "default"
+  },
+  "_note": "This is a GENERIC example schema. Your service might expect different keys.\nCommon keys used here:\n- id: unique module id\n- name: human readable name\n- version: semantic version\n- entry: base Python (or executable) file expected by the service\n- endpoints: paths exposed by the service for this module\n- defaultConfig: per-module default configuration (override via API or overrides.json)\n"
+}
