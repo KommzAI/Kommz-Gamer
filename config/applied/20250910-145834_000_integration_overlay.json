@@ -1,8 +1,0 @@
-{
-  "mod": "integration_overlay",
-  "data": {
-    "autostart": true,
-    "stealth": true,
-    "capture_exclude": true
-  }
-}

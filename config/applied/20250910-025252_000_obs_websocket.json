@@ -1,8 +1,0 @@
-{
-  "mod": "obs_websocket",
-  "data": {
-    "autostart": true,
-    "host": "127.0.0.1",
-    "port": 4455
-  }
-}

@@ -62,7 +62,9 @@ def _resolve_config_file() -> Path:
     is_compiled = _is_compiled_runtime()
     # 1. Variable d'environnement si déjà chargée
     env_file = os.environ.get("KOMMZ_SETTINGS_FILE", "")
-    if env_file:
+    # final_build.bat positionne cette variable a "settings.json" : c'est le
+    # nom du modele, jamais celui du fichier de travail.
+    if env_file and env_file != "settings.json":
         p = config_dir / env_file
         if p.exists():
             return p
@@ -90,8 +92,13 @@ def _resolve_config_file() -> Path:
             legacy = base / fname
             if not legacy.exists():
                 continue
-            dest_name = "settings.private.json" if is_compiled else fname
-            dest = config_dir / dest_name
+            # Le fichier de travail s'appelle toujours settings.private.json.
+            # settings.json est le modele livre avec l'executable : il sert de
+            # source a la premiere copie, jamais de fichier de travail. Avant,
+            # en execution depuis les sources sans settings.private.json, le
+            # modele etait choisi tel quel et save_settings() y ecrivait les
+            # cles, la licence et les peripheriques de l'utilisateur.
+            dest = config_dir / "settings.private.json"
             if not dest.exists():
                 try:
                     config_dir.mkdir(parents=True, exist_ok=True)
@@ -223,6 +230,10 @@ DEFAULT_KOMMZ_VOICE_REPORT_URL = ""
 # AUDIO_CONFIG - Configuration principale
 # ============================================================================
 
+# Langues proposees pour le Mode Ecoute : celles qui ont une voix Edge, pour
+# que la voix lise la traduction dans sa langue.
+LISTEN_TRANSLATE_LANGS = ("FR", "EN", "ES", "DE", "IT", "PT", "RU", "PL", "TR", "JA", "ZH", "KO")
+
 AUDIO_CONFIG = {
     "is_listening": True,
     "is_speaking": False,
@@ -297,9 +308,10 @@ AUDIO_CONFIG = {
     # decochable dans Modules systeme.
     # Traduction spéculative : on traduit les partiels Deepgram pour
     # préchauffer le cache. Aucun texte spéculatif n'est affiché ni prononcé.
-    # Coût : quelques appels de traduction en plus. Mesurer speculative_hits
-    # contre speculative_misses avant de juger si ça sert.
-    "speculative_translation_enabled": True,
+    # Desactivee par defaut depuis la 5.4 : mesure sur 23 phrases, 105
+    # traductions lancees pour 4 reussites. Le quota DeepL s'epuisait pour un
+    # gain quasi nul. Le code et les compteurs restent pour une reprise.
+    "speculative_translation_enabled": False,
     "speculative_translation_min_gap_s": 0.45,
     "speculative_translation_min_new_chars": 3,
     "auto_update_active": True,
@@ -380,6 +392,11 @@ AUDIO_CONFIG = {
     "kommz_whisper_url": DEFAULT_KOMMZ_WHISPER_URL,
     "kommz_health_url": DEFAULT_KOMMZ_HEALTH_URL,
     "kommz_warmup_url": DEFAULT_KOMMZ_WARMUP_URL,
+    # Maintien en eveil du serveur XTTS pendant une partie. Desactive par
+    # defaut en Community : chaque utilisateur y paie son propre GPU.
+    "xtts_keepalive_enabled": not COMMUNITY_EDITION,
+    "xtts_keepalive_interval_s": 240,
+    "xtts_keepalive_idle_stop_s": 900,
     "kommz_generate_url": DEFAULT_KOMMZ_GENERATE_URL,
     "kommz_synthesis_endpoint": DEFAULT_KOMMZ_SYNTHESIS_ENDPOINT,
     "kommz_whisper_endpoint": DEFAULT_KOMMZ_WHISPER_ENDPOINT,
@@ -395,6 +412,25 @@ AUDIO_CONFIG = {
     "tts_engine":            "WINDOWS",
     "edge_voice":            "fr-FR-DeniseNeural",
     "ally_recognition_lang": "en-US",
+    # Langue dans laquelle le Mode Ecoute traduit les coequipiers.
+    # "auto" suit la langue de l'interface (FR ou EN).
+    "listen_translate_lang": "auto",
+    # Modele Deepgram du Mode Ecoute. nova-3 reconnait le francais en mode
+    # "multi" (nova-2 : anglais et espagnol seulement). Repli auto sur nova-2.
+    "listen_stt_model": "nova-3",
+    # Vocabulaire a privilegier par nova-3 (keyterm prompting, 100 termes
+    # maximum). Mots anglais du jeu et du streaming que la reconnaissance
+    # deforme le plus dans une phrase francaise.
+    "listen_keyterms_enabled": True,
+    "listen_keyterms": [
+        "Steam", "Twitch", "Discord", "YouTube", "wishlist", "free to play",
+        "streamer", "live", "GG", "noob", "rush", "spawn", "respawn", "loot",
+        "headshot", "one shot", "flank", "push", "rotate", "nerf", "buff",
+        "patch", "ranked", "lobby", "clutch", "ace", "frag", "heal", "revive",
+        "AFK", "ult", "cooldown", "Valorant", "Fortnite", "Warzone",
+        "Apex Legends", "Counter-Strike", "CS2", "League of Legends",
+        "Overwatch", "Rainbow Six", "PUBG", "Rust", "Tarkov", "Dota",
+    ],
     "mini_overlay_enabled":  False,
     "kommz_client_id":       "",
     "voice_active_id":       "",
@@ -419,7 +455,7 @@ AUDIO_CONFIG = {
 # uniquement les cles listees ci-dessous, une seule fois, quand le profil vient
 # d'une version de schema anterieure. Apres migration, un reglage manuel de
 # l'utilisateur est respecte de nouveau.
-SETTINGS_SCHEMA_VERSION = 1
+SETTINGS_SCHEMA_VERSION = 2
 
 AUDIO_CONFIG["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
 
@@ -433,6 +469,11 @@ _SETTINGS_MIGRATIONS = {
         # chance de correspondre au texte finalise) etait ignore. 3 hits.
         "speculative_translation_min_new_chars",
         "speculative_translation_min_gap_s",
+    ),
+    # 5.4 : traduction speculative desactivee par defaut (105 lancees pour
+    # 4 reussites). Les profils 5.3.x gardaient sinon True indefiniment.
+    2: (
+        "speculative_translation_enabled",
     ),
 }
 

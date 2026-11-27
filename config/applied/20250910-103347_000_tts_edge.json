@@ -1,7 +1,0 @@
-{
-  "mod": "tts_edge",
-  "data": {
-    "autostart": true,
-    "voice": "fr-FR"
-  }
-}

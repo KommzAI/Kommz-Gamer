@@ -1,9 +1,0 @@
-{
-  "mod": "wgc_capture",
-  "data": {
-    "autostart": true,
-    "provider": "dxgi",
-    "monitor": 0,
-    "fps": 120
-  }
-}

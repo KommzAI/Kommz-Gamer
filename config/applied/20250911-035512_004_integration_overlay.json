@@ -1,7 +1,0 @@
-{
-  "mod": "integration_overlay",
-  "data": {
-    "enabled": true,
-    "capture_exclude": true
-  }
-}

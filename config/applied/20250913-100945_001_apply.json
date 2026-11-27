@@ -1,9 +1,0 @@
-[
-  {
-    "mod": "latency",
-    "data": {
-      "autostart": true,
-      "timeout_ms": 1200
-    }
-  }
-]

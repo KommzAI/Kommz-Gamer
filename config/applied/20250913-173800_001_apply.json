@@ -1,9 +1,0 @@
-[
-  {
-    "mod": "lang_detect",
-    "data": {
-      "autostart": false,
-      "enabled": false
-    }
-  }
-]

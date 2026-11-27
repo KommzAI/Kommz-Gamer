@@ -43,7 +43,8 @@ Fichiers les plus importants :
 - **V5.2** : polish, nouveaux presets jeux, UI/UX, overlay desktop, builds, QA avancée — ✅ terminé
 - **V5.3** : intelligence audio, refactoring Flask complet, bugfix stabilisation — ✅ terminé
 - **V5.3.1** : interface reprise, couverture FR/EN complète, mise à jour réparée, journal d'usage — ✅ terminé
-- **V5.4** : social, streaming, multijoueur — 🔄 en cours
+- **V5.4** : performance, sécurité, mise à jour — 🔄 en cours (recentrée le 3 octobre 2026)
+- **V5.5** : social, streaming, multijoueur — reporté de la V5.4
 
 ---
 
@@ -168,7 +169,12 @@ Prochaine étape : lancer la V5.4
 
 ---
 
-# V5.4 — SOCIAL, STREAMING & MULTIJOUEUR — 🔄 EN COURS
+# V5.4 — PERFORMANCE, SÉCURITÉ & MISE À JOUR — 🔄 EN COURS
+
+> **Recentrée le 3 octobre 2026.** La V5.4 sort avec la stabilisation de ce
+> qui est déjà fait (voir la liste « Avant la sortie » de `ROADMAP.md`).
+> Les sections Overlay OBS, Multilingue, Endpointing, Voice Profiles,
+> Soundboard et Discord ci-dessous appartiennent désormais à la **V5.5**.
 
 ## 1. Overlay OBS / Streaming
 - [ ] Overlay HTML5 natif pour OBS Studio
@@ -298,7 +304,7 @@ réécrit tout le fichier depuis la mémoire et efface l'édition.
 
 ---
 
-# Ce qui manque avant V5.5
+# Ce qui manque avant V5.6 (plateforme)
 
 ## 1. Mode dégradé cloud
 - Stratégie documentée si Deepgram / Supabase tombent
@@ -335,13 +341,16 @@ interpolent des valeurs (à traiter côté backend via `CURRENT_UI_LANG`).
 - **V5.3.1** : interface, i18n FR/EN complète, mise à jour réparée, journal d'usage
 
 ## En cours
-- **V5.4** : social / streaming / multijoueur / intégrations Discord
-
-## À finaliser avant V5.5
-- fallback cloud, i18n UI, RGPD, tests unitaires
+- **V5.4** : stabilisation (clé client, bug du modèle `settings.json`, audit réseau local, test de mise à jour 5.3.1 → 5.4). Déjà fait : voix clonée prête en quelques secondes, maintien en éveil, protection des routes Modal.
 
 ## Ensuite
-- **V5.5** : plateforme / marketplace / API / mobile / cloud / updater / premium
+- **V5.5** : social / streaming / multijoueur / intégrations Discord
+
+## À finaliser avant V5.6
+- fallback cloud, i18n UI, RGPD, tests unitaires
+
+## Puis
+- **V5.6** : plateforme / marketplace / API / mobile / cloud / updater / premium
 - **V6+** : offline total, IA locale, deep learning audio
 
 ---
@@ -369,8 +378,9 @@ interpolent des valeurs (à traiter côté backend via `CURRENT_UI_LANG`).
 Projet : **Kommz Gamer**
 État : **V5.4 en cours**
 Terminé : **V5.1, V5.2, V5.3, V5.3.1** (refactoring Flask complet, puis interface reprise, i18n complète, mise à jour réparée, journal d'usage)
-Focus actuel : **streaming, overlay OBS, multilingue, équipe, soundboard, intégrations Discord**
-À finaliser avant V5.5 : **fallback cloud, i18n UI, RGPD, tests unitaires**
+Focus actuel : **stabiliser et sortir la V5.4** (performance, sécurité, mise à jour)
+Ensuite (V5.5) : **streaming, overlay OBS, multilingue, équipe, soundboard, intégrations Discord**
+À finaliser avant V5.6 : **fallback cloud, i18n UI, RGPD, tests unitaires**
 Contraintes : **préserver Community/Private, continuer l'existant, livrer du concret**
 
 ## Bugfix post-refactoring — tous résolus ✅

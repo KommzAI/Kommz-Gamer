@@ -1,8 +1,0 @@
-{
-  "mod": "ux_fps_boost",
-  "data": {
-    "autostart": true,
-    "cpu_priority": "high",
-    "gpu_hint": "auto"
-  }
-}

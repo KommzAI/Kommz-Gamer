@@ -1,7 +1,0 @@
-{
-  "mod": "ux_fps_boost",
-  "data": {
-    "enabled": true,
-    "mode": "low-latency"
-  }
-}
